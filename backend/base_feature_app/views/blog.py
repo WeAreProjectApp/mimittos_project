@@ -11,6 +11,6 @@ def blog_list(request):
     """
     List all blogs.
     """
-    blogs = Blog.objects.all()
+    blogs = Blog.objects.select_related('image').prefetch_related('image__attachment_set')
     serializer = BlogSerializer(blogs, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)

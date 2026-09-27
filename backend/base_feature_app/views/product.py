@@ -14,6 +14,6 @@ def product_list(request):
     :param request: The HTTP request object.
     :return: JSON response with the serialized list of products and HTTP status 200.
     """
-    products = Product.objects.all()
+    products = Product.objects.select_related('gallery').prefetch_related('gallery__attachment_set')
     serializer = ProductSerializer(products, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
