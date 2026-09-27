@@ -13,7 +13,11 @@ from base_feature_app.serializers.blog_list import BlogListSerializer
 @permission_classes([AllowAny])
 def blogs(request):
     if request.method == 'GET':
-        queryset = Blog.objects.all().order_by('-id')
+        queryset = (
+            Blog.objects.select_related('image')
+            .prefetch_related('image__attachment_set')
+            .order_by('-id')
+        )
         serializer = BlogListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
