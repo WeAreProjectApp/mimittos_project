@@ -2,11 +2,14 @@ import csv
 import io
 from datetime import date
 
-from django.db.models import Case, Count, DecimalField, Exists, OuterRef, Q, Sum, When
+from django.db.models import Case, Count, DecimalField, Exists, OuterRef, Prefetch, Q, Sum, When
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
-from base_feature_app.models import Order, PageView, Peluch
+from base_feature_app.models import Order, OrderItem, PageView, Peluch
+
+
+EXPORT_ORDER_CHUNK_SIZE = 100
 
 
 class AnalyticsService:
@@ -154,7 +157,12 @@ class AnalyticsService:
         orders = Order.objects.filter(
             created_at__date__gte=date_from,
             created_at__date__lte=date_to,
-        ).prefetch_related('items__peluch', 'items__size', 'items__color')
+        ).prefetch_related(
+            Prefetch(
+                'items',
+                queryset=OrderItem.objects.select_related('peluch', 'size', 'color'),
+            ),
+        )
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -165,7 +173,7 @@ class AnalyticsService:
             'Peluche', 'Tamaño', 'Color', 'Cantidad', 'Precio unitario',
         ])
 
-        for order in orders:
+        for order in orders.iterator(chunk_size=EXPORT_ORDER_CHUNK_SIZE):
             for item in order.items.all():
                 writer.writerow([
                     order.order_number,
