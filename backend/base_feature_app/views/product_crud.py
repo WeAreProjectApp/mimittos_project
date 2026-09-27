@@ -13,7 +13,11 @@ from base_feature_app.serializers.product_list import ProductListSerializer
 @permission_classes([AllowAny])
 def products(request):
     if request.method == 'GET':
-        queryset = Product.objects.all().order_by('-id')
+        queryset = (
+            Product.objects.select_related('gallery')
+            .prefetch_related('gallery__attachment_set')
+            .order_by('-id')
+        )
         serializer = ProductListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
