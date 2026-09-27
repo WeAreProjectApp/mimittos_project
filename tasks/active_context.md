@@ -5,6 +5,22 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Rendimiento de blogs, productos y exportación — 2026-09-27
+
+Rama `fix/27092026-perf-blogs-products-export`, PR #73 contra `main`.
+Los dos listados de blogs y los dos de productos legacy agrupan bibliotecas y
+adjuntos; el serializer histórico de blogs reutiliza el primer adjunto.
+El CSV precarga artículos con sus relaciones por bloques de 100 pedidos.
+Se conservan respuestas, orden por rank, columnas, BOM y filtros de fecha.
+
+Perfil `vps-projectapp-prod`; caso `conservative`: las respuestas completas y el
+CSV final siguen creciendo con el dataset, y el número de artículos por pedido
+no está acotado. No se certifica memoria total ni tiempos de producción.
+QA backend valida consultas constantes de listados y consultas por bloque en
+SQLite aislada, con medios temporales: 16 casos nuevos y 22 regresiones aprobados,
+con gate estricto sin errores ni advertencias. La evidencia operativa vive en los
+reportes perf/QA de esta ronda en el toolkit; CI vigente en PR #73.
+
 ## Limpieza del repositorio — 2026-09-25
 
 Rama `chore/25092026-repo-cleanup`, desde `main` en `3dd5d84`. Auditoría y lote

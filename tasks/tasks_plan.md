@@ -5,6 +5,17 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda de rendimiento — 2026-09-27
+
+- [x] Agrupar imágenes de blogs: `P-backend-queries-08`.
+- [x] Agrupar galerías de productos legacy: `P-backend-queries-09`.
+- [x] Recorrer la exportación por bloques: `P-backend-views-01`.
+- [x] Verificar presupuestos y regresiones con QA backend: 16 casos nuevos y 22 regresiones.
+- [x] Publicar PR #73; el estado vigente de CI se comprueba al cierre, sin merge ni deploy.
+
+La paginación de listados y el streaming del CSV quedan como escalaciones de
+contrato, fuera de esta ronda. No hay cambios de flujo frontend ni de esquema.
+
 ## Limpieza del repositorio — 2026-09-25
 
 - [x] Revalidar en `origin/main` los cinco módulos frontend sin uso y sus tests.
