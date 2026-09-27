@@ -5,6 +5,27 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Rendimiento — ventas y filtros administrativos (2026-09-27)
+
+Rama `fix/27092026-perf-sales-order-filters`, desde main; PR #74.
+El detalle de ventas precarga artículos, productos y galerías. Los filtros del
+backoffice cancelan consultas reemplazadas; sólo la ejecución vigente puede
+actualizar filas, error o carga. La API conserva datos y permisos, y los botones
+siguen consultando de inmediato.
+
+QA confirma consultas constantes con productos y galerías distintos,
+colecciones vacías, permisos y respuestas fuera de orden. El detalle ejecuta
+tres consultas tanto para un artículo como para cincuenta. El nuevo flujo E2E
+`backoffice-order-filter` separa este comportamiento del filtro de pedidos del
+cliente. Las pruebas usan SQLite temporal y servicios locales con red interceptada.
+Pasaron 35 casos distintos: 5 backend, 26 unitarios frontend y 4 E2E; TypeScript
+y el gate estricto del lote también pasaron. El auditor aprobó los archivos tocados.
+
+No se garantiza memoria acotada para detalles/listados completos ni cancelación
+SQL al abortar el navegador. La paginación requiere otra decisión de contrato.
+Registro operativo: toolkit `docs/audits/2026-09-27-mimittos_project-perf-sales-order-filters.md`.
+Entrega: PR abierto con CI verde; sin merge ni deploy.
+
 ## Limpieza del repositorio — 2026-09-25
 
 Rama `chore/25092026-repo-cleanup`, desde `main` en `3dd5d84`. Auditoría y lote
