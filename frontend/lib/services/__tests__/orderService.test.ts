@@ -89,6 +89,24 @@ describe('orderService', () => {
       await orderService.listOrders(params)
       expect(mockGet).toHaveBeenCalledWith('/orders/list/', { params })
     })
+
+    it('forwards an optional abort signal with the status filter', async () => {
+      const controller = new AbortController()
+      const orders = [{ order_number: 'MIM-PROD-001', status: 'in_production' }]
+      mockGet.mockResolvedValue({ data: orders })
+
+      const result = await orderService.listOrders(
+        { status: 'in_production' },
+        { signal: controller.signal },
+      )
+
+      // Fails if the backoffice cannot cancel a superseded filtered request at the API boundary.
+      expect(mockGet).toHaveBeenCalledWith('/orders/list/', {
+        params: { status: 'in_production' },
+        signal: controller.signal,
+      })
+      expect(result).toEqual(orders)
+    })
   })
 
   describe('updateStatus', () => {

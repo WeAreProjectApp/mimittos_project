@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from '@jest/globals'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 jest.mock('@/lib/services/orderService', () => ({
@@ -73,6 +73,16 @@ const sampleOrderDetail = {
   ],
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('PedidosAdminPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -82,8 +92,13 @@ describe('PedidosAdminPage', () => {
     mockGetOrderDetail.mockResolvedValue(sampleOrderDetail)
   })
 
-  it('renders the Pedidos h1 heading', () => {
+  it('renders the Pedidos h1 heading', async () => {
     render(<PedidosAdminPage />)
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
     expect(screen.getByRole('heading', { level: 1, name: 'Pedidos' })).toBeInTheDocument()
   })
 
@@ -100,6 +115,9 @@ describe('PedidosAdminPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/No se pudieron cargar los pedidos/i)).toBeInTheDocument()
     })
+
+    // Fails if an active request rejection leaves its loading indicator visible.
+    expect(screen.queryByText('Cargando...')).not.toBeInTheDocument()
   })
 
   it('renders one row per order returned by the service', async () => {
@@ -114,12 +132,96 @@ describe('PedidosAdminPage', () => {
 
   it('refetches with status filter when a filter button is clicked', async () => {
     render(<PedidosAdminPage />)
-    await waitFor(() => expect(mockListOrders).toHaveBeenCalledWith(undefined))
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(1))
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'En producción' }))
 
-    await waitFor(() => expect(mockListOrders).toHaveBeenCalledWith({ status: 'in_production' }))
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(2))
+    expect(mockListOrders).toHaveBeenLastCalledWith(
+      { status: 'in_production' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
+  it('keeps the newest status results when superseded requests resolve late', async () => {
+    const initialRequest = deferred<typeof sampleOrder[]>()
+    const productionRequest = deferred<typeof sampleOrder[]>()
+    const shippedRequest = deferred<typeof sampleOrder[]>()
+    mockListOrders
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(productionRequest.promise)
+      .mockReturnValueOnce(shippedRequest.promise)
+    const user = userEvent.setup()
+    render(<PedidosAdminPage />)
+
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'En producción' }))
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(2))
+    await user.click(screen.getByRole('button', { name: 'Despachado' }))
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(3))
+
+    const [, initialOptions] = mockListOrders.mock.calls[0]
+    const [, productionOptions] = mockListOrders.mock.calls[1]
+    expect(initialOptions.signal.aborted).toBe(true)
+    expect(productionOptions.signal.aborted).toBe(true)
+
+    await act(async () => {
+      shippedRequest.resolve([{ ...sampleOrder, order_number: 'MIM-SHIP-NEW', customer_name: 'Pedido vigente' }])
+      await Promise.resolve()
+    })
+    await act(async () => {
+      initialRequest.resolve([{ ...sampleOrder, order_number: 'MIM-OLD', customer_name: 'Pedido antiguo' }])
+      await Promise.resolve()
+    })
+
+    // Fails if a late pre-filter response overwrites the active status result.
+    expect(screen.getByTestId('order-row-MIM-SHIP-NEW')).toHaveTextContent('Pedido vigente')
+    expect(screen.queryByText('Pedido antiguo')).not.toBeInTheDocument()
+  })
+
+  it('keeps loading when an obsolete request rejects during an active request', async () => {
+    const initialRequest = deferred<typeof sampleOrder[]>()
+    const activeRequest = deferred<typeof sampleOrder[]>()
+    mockListOrders
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(activeRequest.promise)
+    const user = userEvent.setup()
+    render(<PedidosAdminPage />)
+
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'En producción' }))
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      initialRequest.reject(new Error('obsolete failure'))
+      await Promise.resolve()
+    })
+
+    // Fails if an obsolete catch or finally clears loading for the pending status filter.
+    expect(screen.getByText('Cargando...')).toBeInTheDocument()
+    expect(screen.queryByText('No se pudieron cargar los pedidos.')).not.toBeInTheDocument()
+
+    await act(async () => {
+      activeRequest.resolve([{ ...sampleOrder, order_number: 'MIM-PROD-NEW', customer_name: 'Producción vigente' }])
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId('order-row-MIM-PROD-NEW')).toHaveTextContent('Producción vigente')
+    expect(screen.queryByText('Cargando...')).not.toBeInTheDocument()
+  })
+
+  it('aborts the active order request when the page unmounts', async () => {
+    const activeRequest = deferred<typeof sampleOrder[]>()
+    mockListOrders.mockReturnValue(activeRequest.promise)
+    const { unmount } = render(<PedidosAdminPage />)
+
+    await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(1))
+    const [, options] = mockListOrders.mock.calls[0]
+    unmount()
+
+    // Fails if navigating away leaves the active orders request in flight.
+    expect(options.signal.aborted).toBe(true)
   })
 
   it('updates the order status optimistically when the select changes', async () => {

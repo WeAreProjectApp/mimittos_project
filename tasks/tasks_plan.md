@@ -5,6 +5,17 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda de rendimiento — ventas y filtros (2026-09-27)
+
+- [x] P-backend-queries-10: precargar relaciones del detalle de ventas.
+- [x] P-frontend-views-02: cancelar consultas reemplazadas y proteger el estado vigente.
+- [x] Abrir [PR #74](https://github.com/WeAreProjectApp/mimittos_project/pull/74) desde un worktree independiente.
+- [x] Validar presupuesto, regresiones y flujo E2E administrativo.
+- [x] Completar quality gate local y auditoría independiente del lote.
+- Entrega: esperar CI verde en el PR #74; el estado vigente se verifica en GitHub. Sin merge.
+
+El candidato nuevo sobre creación de ventas queda en el ledger para otra ronda.
+
 ## Ronda de rendimiento — 2026-09-27
 
 - [x] Agrupar imágenes de blogs: `P-backend-queries-08`.

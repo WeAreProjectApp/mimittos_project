@@ -1,9 +1,11 @@
+from django.db.models import Prefetch
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from base_feature_app.models import Sale
+from base_feature_app.models import Sale, SoldProduct
 from base_feature_app.serializers.sale_detail import SaleDetailSerializer
 from base_feature_app.serializers.sale_list import SaleListSerializer
 
@@ -26,7 +28,14 @@ def sale_detail(request, sale_id: int):
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        sale = Sale.objects.get(id=sale_id)
+        sale = Sale.objects.prefetch_related(
+            Prefetch(
+                'sold_products',
+                queryset=SoldProduct.objects.select_related('product__gallery').prefetch_related(
+                    'product__gallery__attachment_set',
+                ),
+            ),
+        ).get(id=sale_id)
     except Sale.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 

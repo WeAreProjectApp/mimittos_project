@@ -47,6 +47,8 @@ banned_tokens:
 performance_paths:
   - "blogs=backend/base_feature_app/views/blog.py,backend/base_feature_app/views/blog_crud.py,backend/base_feature_app/serializers/blog.py,backend/base_feature_app/serializers/blog_list.py"
   - "legacy-products=backend/base_feature_app/views/product.py,backend/base_feature_app/views/product_crud.py"
+  - "legacy-sales=backend/base_feature_app/views/sale_crud.py"
+  - "backoffice-orders=frontend/app/backoffice/pedidos/page.tsx,frontend/lib/services/orderService.ts"
   - "catalog=frontend/app/catalog/page.tsx,frontend/lib/services/peluchService.ts,backend/base_feature_app/views/catalog.py,backend/base_feature_app/serializers/catalog.py"
   - "analytics=backend/base_feature_app/services/analytics_service.py"
   - "reviews=backend/base_feature_app/services/review_service.py"
@@ -57,6 +59,8 @@ performance_budget_tests:
   - "backend/base_feature_app/tests/views/test_blog_list_queries.py"
   - "backend/base_feature_app/tests/views/test_product_list_queries.py"
   - "backend/base_feature_app/tests/services/test_order_export_queries.py"
+  - "backend/base_feature_app/tests/views/test_sale_detail_queries.py"
+  - "frontend/app/backoffice/pedidos/__tests__/page.test.tsx"
   - "frontend/app/catalog/__tests__/page.test.tsx"
   - "backend/base_feature_app/tests/services/test_analytics_service.py"
   - "backend/base_feature_app/tests/services/test_review_service.py"

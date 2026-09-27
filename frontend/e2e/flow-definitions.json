@@ -1,6 +1,6 @@
 {
-  "version": "1.5.1",
-  "lastUpdated": "2026-08-20",
+  "version": "1.5.2",
+  "lastUpdated": "2026-09-27",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -1316,6 +1316,20 @@
       "expectedSpecs": 1,
       "outcomes": [
         "display"
+      ]
+    },
+    "backoffice-order-filter": {
+      "name": "Filter backoffice orders by status",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P2",
+      "description": "Staff opens Pedidos from the backoffice and selects a status filter. GET /api/orders/list/?status=<status> replaces the table only when it is the current request; superseded filter requests are aborted and cannot overwrite the latest result.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "success",
+        "failure"
       ]
     }
   }

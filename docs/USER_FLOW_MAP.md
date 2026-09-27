@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.1
-**Last Updated:** 2026-08-20
+**Version:** 1.5.2
+**Last Updated:** 2026-09-27
 
 ---
 
@@ -60,6 +60,7 @@ Use this document to understand each flow's steps, branching conditions, role re
 | `backoffice-login` | Staff Sign-In | backoffice | P2 | staff | `/sign-in` |
 | `backoffice-dashboard-display` | Backoffice Dashboard | backoffice | P2 | staff | `/backoffice` |
 | `backoffice-order-management` | Order Management | backoffice | P2 | staff | `/backoffice/pedidos` |
+| `backoffice-order-filter` | Filter Backoffice Orders by Status | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-peluch-list` | Peluch List | backoffice | P3 | staff | `/backoffice/peluches` |
 | `backoffice-peluch-create` | Create Peluch | backoffice | P3 | staff | `/backoffice/peluches/nuevo` |
 | `backoffice-peluch-edit` | Edit Peluch | backoffice | P3 | staff | `/backoffice/peluches/[slug]` |
@@ -1695,3 +1696,26 @@ These flows were registered after the "incremental color image upload" feature w
 |-----------|----------|
 | All peluches are active | No Borrador badges shown anywhere in the table |
 | All peluches are drafts | Every row shows the Borrador badge |
+
+## Flows added in version 1.5.2 (2026-09-27)
+
+### backoffice-order-filter
+
+**Role:** staff · **Priority:** P2 · **Route:** `/backoffice/pedidos`.
+
+Staff opens Pedidos from the backoffice dashboard, then selects a status button
+or Todos. The page calls `GET /api/orders/list/?status=<status>` (without status
+for Todos), replaces rows from the current response, and updates the order count.
+Changing the filter or leaving the page aborts the previous request. Its late
+success, rejection, or completion cannot change the current rows, error, or loading.
+
+| Class | Behavior |
+|-------|----------|
+| success | Only the selected status response populates the table after older requests settle. |
+| error | n/a: fixed status buttons accept no free-form input; authorization belongs to the existing backoffice guard. |
+| failure | The active request fails and shows `No se pudieron cargar los pedidos.`; superseded requests cannot show an error. |
+| display | Initial table, loading, and empty states belong to existing `backoffice-order-management`. |
+
+An empty current response shows `Sin pedidos`. Selectors use accessible status
+buttons and `data-testid="order-row-<order_number>"`. Dedicated E2E outcomes are
+success and failure; local intercepted API responses provide distinguishable rows.

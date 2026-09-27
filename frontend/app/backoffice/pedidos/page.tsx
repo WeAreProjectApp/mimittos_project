@@ -58,7 +58,30 @@ export default function PedidosAdminPage() {
   const [detailError, setDetailError] = useState('')
 
   useEffect(() => {
-    loadOrders()
+    const controller = new AbortController()
+    let active = true
+
+    async function loadOrders() {
+      setLoading(true)
+      setError('')
+      try {
+        const data = await orderService.listOrders(
+          filter ? { status: filter } : undefined,
+          { signal: controller.signal },
+        )
+        if (active) setOrders(data)
+      } catch {
+        if (active) setError('No se pudieron cargar los pedidos.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void loadOrders()
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [filter])
 
   useEffect(() => {
@@ -71,19 +94,6 @@ export default function PedidosAdminPage() {
       .catch(() => setDetailError('No se pudo cargar el detalle del pedido.'))
       .finally(() => setDetailLoading(false))
   }, [detailOrderNumber])
-
-  async function loadOrders() {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await orderService.listOrders(filter ? { status: filter } : undefined)
-      setOrders(data)
-    } catch {
-      setError('No se pudieron cargar los pedidos.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleStatusChange(orderNumber: string, newStatus: string) {
     setStatusUpdating(orderNumber)

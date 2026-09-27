@@ -169,3 +169,5 @@ export const BACKOFFICE_ORDER_TRACKING_UPDATE = ['@flow:backoffice-order-trackin
 // ── Backoffice (configuración split added in v1.4.0) ──
 export const BACKOFFICE_PROMO_BANNER_SAVE = ['@flow:backoffice-promo-banner-save', '@module:backoffice', '@priority:P3'];
 export const BACKOFFICE_HERO_IMAGE_UPLOAD = ['@flow:backoffice-hero-image-upload', '@module:backoffice', '@priority:P3'];
+
+export const BACKOFFICE_ORDER_FILTER = ['@flow:backoffice-order-filter', '@module:backoffice', '@priority:P2'];
