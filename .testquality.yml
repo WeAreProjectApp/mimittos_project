@@ -57,6 +57,7 @@ performance_paths:
   - "orders=backend/base_feature_app/serializers/order.py,backend/base_feature_app/services/order_service.py,backend/base_feature_app/views/order_views.py"
   - "dashboard=backend/base_feature_app/services/analytics_service.py,frontend/app/backoffice/page.tsx,frontend/components/admin/DashboardCharts.tsx"
 performance_budget_tests:
+  - "frontend/e2e/backoffice/backoffice-analytics.spec.ts"
   - "backend/base_feature_app/tests/serializers/test_sale_serializer.py"
   - "frontend/lib/stores/__tests__/blogStore.test.ts"
   - "backend/base_feature_app/tests/views/test_blog_list_queries.py"

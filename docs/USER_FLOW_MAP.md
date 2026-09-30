@@ -1735,3 +1735,15 @@ Estos identificadores son los del registro E2E vigente. La ruta de entrada es `/
 La matriz es 412 × 915, 835 × 1194, 1195 × 835, 1440 × 900 y 2560 × 1440, declarada una sola vez en `frontend/e2e/helpers/viewports.ts`. Cada prueba por anchura debe ejercer una interacción real. El carrusel móvil y la grilla de escritorio son las dos presentaciones existentes del mismo flujo.
 
 No hay estados de error o fallo propios de las preguntas locales: no hacen solicitudes. Los fallos de servicios no se alteran en esta ronda. `home-to-blog` conserva su exención: Inicio no tiene un enlace a Blogs. Los componentes compartidos de navegación y animación quedan fuera del módulo seleccionado.
+
+
+### Cobertura de la ronda
+
+| Rol | Flujo | Test dueño | Resultado exigido |
+|-----|-------|------------|-------------------|
+| Invitado o usuario | `home-loads`, `home-faq`, `home-product-carousel`, `home-to-catalog` | `frontend/e2e/home/home-layout.spec.ts` | Datos concretos, geometría de tarjetas, respuesta de FAQ y navegación real en los presets correspondientes. |
+| Personal administrativo | `backoffice-dashboard-display` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | El paquete real de gráficos se solicita tras llegar los datos; los scripts compilados respetan los límites de transferencia. |
+| Personal administrativo | `backoffice-analytics-date-filter` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | El período exacto cambia el resumen de pedidos y conserva las series del gráfico. |
+| Personal administrativo | `backoffice-analytics-export-csv` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | Descarga el contenido del CSV seleccionado; un error del servicio muestra el aviso existente y permite volver a exportar. |
+
+Convenciones: `@flow` desde el registro y `@outcome` inline; fixtures de red controladas en el navegador; sin condiciones que permitan aprobar cuando faltan controles o datos. Las repeticiones de anchura pertenecen al mismo flujo y no crean un módulo responsive. Los estados de error/fallo no aplicables al FAQ se justifican arriba; el fallo real del CSV se registra como `failure`.

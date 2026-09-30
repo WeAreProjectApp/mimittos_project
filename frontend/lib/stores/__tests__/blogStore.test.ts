@@ -24,6 +24,62 @@ describe('blogStore', () => {
   });
 
   describe('fetchBlogs', () => {
+    it('shares one pending request across simultaneous consumers', async () => {
+      let resolveRequest: (value: { data: typeof mockBlogs }) => void = () => undefined;
+      const pendingResponse = new Promise<{ data: typeof mockBlogs }>((resolve) => {
+        resolveRequest = resolve;
+      });
+      mockApi.get.mockReturnValue(pendingResponse);
+
+      let consumers: Promise<void>[] = [];
+      act(() => {
+        consumers = Array.from({ length: 50 }, () => useBlogStore.getState().fetchBlogs());
+      });
+
+      await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(1));
+      expect(mockApi.get).toHaveBeenCalledWith('blogs/');
+
+      // Fails if every consumer starts its own request before the first list resolves.
+      await act(async () => {
+        resolveRequest({ data: mockBlogs });
+        await Promise.all(consumers);
+      });
+
+      expect(useBlogStore.getState()).toMatchObject({ blogs: mockBlogs, loading: false, error: null });
+    });
+
+    it('starts a new request after a completed refresh', async () => {
+      const firstBlogs = [{ id: 1, title: 'Primero' }];
+      const refreshedBlogs = [{ id: 2, title: 'Segundo' }];
+      mockApi.get.mockResolvedValueOnce({ data: firstBlogs }).mockResolvedValueOnce({ data: refreshedBlogs });
+
+      await act(async () => {
+        await useBlogStore.getState().fetchBlogs();
+      });
+      await act(async () => {
+        await useBlogStore.getState().fetchBlogs();
+      });
+
+      // Fails if the completed promise remains cached and returns the first response forever.
+      expect(mockApi.get).toHaveBeenCalledTimes(2);
+      expect(useBlogStore.getState().blogs).toEqual([{ id: 2, title: 'Segundo' }]);
+    });
+
+    it('recovers with a fresh request after a failed load', async () => {
+      mockApi.get.mockRejectedValueOnce(new Error('Network error')).mockResolvedValueOnce({ data: mockBlogs });
+
+      await act(async () => {
+        await useBlogStore.getState().fetchBlogs();
+      });
+      await act(async () => {
+        await useBlogStore.getState().fetchBlogs();
+      });
+
+      // Fails if a rejected request stays cached or its error survives a successful recovery.
+      expect(mockApi.get).toHaveBeenCalledTimes(2);
+      expect(useBlogStore.getState()).toMatchObject({ blogs: mockBlogs, error: null, loading: false });
+    });
+
     it('should fetch blogs successfully', async () => {
       mockApi.get.mockResolvedValueOnce({ data: mockBlogs });
 

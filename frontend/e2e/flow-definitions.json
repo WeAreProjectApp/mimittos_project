@@ -10,7 +10,7 @@
       ],
       "priority": "P1",
       "description": "Home page shows its heading, product offers and review content within the viewport at the five project widths; compact and portrait headings fit in two lines.",
-      "expectedSpecs": 1,
+      "expectedSpecs": 5,
       "outcomes": [
         "display"
       ]
@@ -50,7 +50,7 @@
       ],
       "priority": "P3",
       "description": "User selects a featured product with the home carousel pagination at compact and portrait widths, then follows its card to the matching detail page. Pagination targets remain at least 44 by 44 pixels.",
-      "expectedSpecs": 1,
+      "expectedSpecs": 2,
       "outcomes": [
         "success"
       ]
@@ -1084,8 +1084,8 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff clicks the '↓ CSV' button on /backoffice; analyticsAdminService.exportOrdersCSV downloads a CSV file scoped to the current date range",
-      "expectedSpecs": 1,
+      "description": "Staff exports the selected period as a CSV download; an export failure shows its existing error alert and restores the action.",
+      "expectedSpecs": 2,
       "outcomes": [
         "success",
         "failure"
@@ -1340,7 +1340,7 @@
       ],
       "priority": "P3",
       "description": "User expands and collapses an existing home question at each project width; its answer stays readable within the page.",
-      "expectedSpecs": 0,
+      "expectedSpecs": 5,
       "outcomes": [
         "success"
       ]
