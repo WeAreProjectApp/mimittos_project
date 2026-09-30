@@ -14,18 +14,25 @@ type BlogState = {
   clearError: () => void;
 };
 
+let pendingBlogsRequest: Promise<void> | null = null;
+
 export const useBlogStore = create<BlogState>((set) => ({
   blogs: [],
   loading: false,
   error: null,
-  fetchBlogs: async () => {
+  fetchBlogs: () => {
+    if (pendingBlogsRequest) return pendingBlogsRequest;
+
+    pendingBlogsRequest = Promise.resolve().then(async () => {
+      try {
+        const response = await api.get('blogs/');
+        set({ blogs: Array.isArray(response.data) ? response.data : [], loading: false });
+      } catch {
+        set({ error: 'Could not load blogs. Is the backend running?', loading: false });
+      }
+    }).finally(() => { pendingBlogsRequest = null; });
     set({ loading: true, error: null });
-    try {
-      const response = await api.get('blogs/');
-      set({ blogs: Array.isArray(response.data) ? response.data : [], loading: false });
-    } catch (e) {
-      set({ error: 'Could not load blogs. Is the backend running?', loading: false });
-    }
+    return pendingBlogsRequest;
   },
   fetchBlog: async (blogId: number) => {
     set({ loading: true, error: null });
