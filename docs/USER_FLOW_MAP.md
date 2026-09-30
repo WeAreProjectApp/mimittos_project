@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.2
-**Last Updated:** 2026-09-27
+**Version:** 1.5.3
+**Last Updated:** 2026-09-30
 
 ---
 
@@ -1719,3 +1719,19 @@ success, rejection, or completion cannot change the current rows, error, or load
 An empty current response shows `Sin pedidos`. Selectors use accessible status
 buttons and `data-testid="order-row-<order_number>"`. Dedicated E2E outcomes are
 success and failure; local intercepted API responses provide distinguishable rows.
+
+
+## Inicio — ronda del 30 de septiembre de 2026
+
+Estos identificadores son los del registro E2E vigente. La ruta de entrada es `/`, accesible sin iniciar sesión. Los servicios de productos, categorías, reseñas y contenido se sustituyen por respuestas controladas en los tests; no se consulta la base de producción.
+
+| Flow ID | Interacción y resultado observable | Clase | Prioridad |
+|---------|-----------------------------------|-------|-----------|
+| `home-loads` | Muestra el título, los productos y las reseñas. El título ocupa como máximo dos líneas a 412 y 835 px; los nombres largos de reseñas caben en sus tarjetas. | display | P1 |
+| `home-product-carousel` | Pulsa un punto del carrusel con un área mínima de 44 × 44 px, selecciona el segundo producto y abre su detalle correspondiente. | success | P3 |
+| `home-to-catalog` | Sigue el enlace del catálogo desde Inicio y encuentra los productos ofrecidos en `/catalog`. | success | P2 |
+| `home-faq` | Abre una pregunta existente, lee la respuesta y la vuelve a cerrar; el contenido permanece dentro de la página. | success | P3 |
+
+La matriz es 412 × 915, 835 × 1194, 1195 × 835, 1440 × 900 y 2560 × 1440, declarada una sola vez en `frontend/e2e/helpers/viewports.ts`. Cada prueba por anchura debe ejercer una interacción real. El carrusel móvil y la grilla de escritorio son las dos presentaciones existentes del mismo flujo.
+
+No hay estados de error o fallo propios de las preguntas locales: no hacen solicitudes. Los fallos de servicios no se alteran en esta ronda. `home-to-blog` conserva su exención: Inicio no tiene un enlace a Blogs. Los componentes compartidos de navegación y animación quedan fuera del módulo seleccionado.

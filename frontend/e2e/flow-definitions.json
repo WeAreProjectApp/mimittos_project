@@ -1,6 +1,6 @@
 {
-  "version": "1.5.2",
-  "lastUpdated": "2026-09-27",
+  "version": "1.5.3",
+  "lastUpdated": "2026-09-30",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -9,7 +9,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "Home page renders with main heading visible",
+      "description": "Home page shows its heading, product offers and review content within the viewport at the five project widths; compact and portrait headings fit in two lines.",
       "expectedSpecs": 1,
       "outcomes": [
         "display"
@@ -36,7 +36,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User clicks 'Shop now' on home page and navigates to catalog then product detail",
+      "description": "User follows the home catalog link to /catalog and sees the offered products.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -49,7 +49,7 @@
         "shared"
       ],
       "priority": "P3",
-      "description": "User clicks a product from the home page carousel and reaches the detail page",
+      "description": "User selects a featured product with the home carousel pagination at compact and portrait widths, then follows its card to the matching detail page. Pagination targets remain at least 44 by 44 pixels.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -1330,6 +1330,19 @@
       "outcomes": [
         "success",
         "failure"
+      ]
+    },
+    "home-faq": {
+      "name": "Read home frequently asked questions",
+      "module": "home",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P3",
+      "description": "User expands and collapses an existing home question at each project width; its answer stays readable within the page.",
+      "expectedSpecs": 0,
+      "outcomes": [
+        "success"
       ]
     }
   }

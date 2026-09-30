@@ -182,7 +182,7 @@ export default function HomePage() {
               </span>
             </FadeUp>
             <FadeUp delay={0.2}>
-              <h1 className="text-[42px] md:text-[68px]" style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, lineHeight: 1.02, marginTop: 24, color: 'var(--navy)', letterSpacing: '-.02em' }}>
+              <h1 data-testid="home-heading" className="text-[32px] md:text-[36px] lg:text-[68px]" style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, lineHeight: 1.02, marginTop: 24, color: 'var(--navy)', letterSpacing: '-.02em' }}>
                 Cada abrazo guarda un{' '}
                 <em style={{ fontStyle: 'normal', color: 'var(--coral)', position: 'relative', display: 'inline-block' }}>recuerdo</em>{' '}
                 único.
@@ -320,13 +320,14 @@ export default function HomePage() {
           </FadeUp>
 
           {/* Mobile: Swiper carousel */}
-          <div className="block lg:hidden" style={{ paddingBottom: 36 }}>
+          <div data-testid="home-featured-carousel" className="block lg:hidden" style={{ paddingBottom: 36 }}>
             <Swiper
+              className="home-carousel"
               modules={[Pagination]}
               slidesPerView={1.15}
               spaceBetween={14}
-              pagination={{ clickable: true }}
-              style={{ paddingBottom: 32 }}
+              pagination={{ clickable: true, renderBullet: (index, className) => `<button type="button" class="${className}" aria-label="Mostrar peluche ${index + 1}"></button>` }}
+              style={{ paddingBottom: 52 }}
             >
               {featuredPeluches.map((p) => (
                 <SwiperSlide key={p.id}>
@@ -337,7 +338,7 @@ export default function HomePage() {
           </div>
 
           {/* Desktop: 4-column grid */}
-          <StaggerContainer className="hidden lg:grid lg:grid-cols-4 gap-5">
+          <StaggerContainer data-testid="home-featured-grid" className="hidden lg:grid lg:grid-cols-4 gap-5">
             {featuredPeluches.map((p) => (
               <StaggerItem key={p.id}>
                 <PeluchCard p={p} />
@@ -358,12 +359,13 @@ export default function HomePage() {
           {/* Mobile: Swiper carousel */}
           <div className="block sm:hidden" style={{ paddingBottom: 40 }}>
             <Swiper
+              className="home-carousel"
               modules={[Pagination]}
               slidesPerView={1.08}
               spaceBetween={14}
               centeredSlides
-              pagination={{ clickable: true }}
-              style={{ paddingBottom: 40 }}
+              pagination={{ clickable: true, renderBullet: (index, className) => `<button type="button" class="${className}" aria-label="Mostrar paso ${index + 1}"></button>` }}
+              style={{ paddingBottom: 52 }}
             >
               {STEPS.map((step) => (
                 <SwiperSlide key={step.n}>
@@ -429,9 +431,9 @@ export default function HomePage() {
               <div style={eyebrowStyle}>Historias de abrazos</div>
               <h2 className="text-[32px] md:text-[46px]" style={{ ...h2StyleBase, textAlign: 'center' }}>Lo que dicen quienes ya tienen el suyo.</h2>
             </FadeUp>
-            <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <StaggerContainer data-testid="home-reviews" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {homeReviews.map((r) => (
-                <StaggerItem key={r.id} style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: 28, boxShadow: 'var(--shadow-sm)', position: 'relative' }}>
+                <StaggerItem data-testid={`home-review-${r.id}`} className="min-w-0 [overflow-wrap:anywhere]" key={r.id} style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: 28, boxShadow: 'var(--shadow-sm)', position: 'relative' }}>
                   <div style={{ position: 'absolute', top: -18, left: 28, width: 44, height: 44, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'grid', placeItems: 'center', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 28 }}>"</div>
                   <StarRating rating={r.rating} />
                   <p style={{ color: 'var(--navy)', fontSize: 15, lineHeight: 1.65, marginBottom: 24 }}>{r.comment}</p>
@@ -439,7 +441,7 @@ export default function HomePage() {
                     <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0, fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 18 }}>
                       {r.user_name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <strong style={{ display: 'block', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--navy)' }}>{r.user_name}</strong>
                       <span style={{ fontSize: 12, color: 'var(--gray-warm)' }}>{r.peluch_title}</span>
                     </div>
@@ -459,7 +461,7 @@ export default function HomePage() {
         </FadeUp>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {FAQS.map((faq, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 'var(--radius-md)', padding: '20px 24px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+            <div data-testid={`home-faq-${i}`} key={i} style={{ background: '#fff', borderRadius: 'var(--radius-md)', padding: '20px 24px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
                 <strong style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{faq.q}</strong>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: openFaq === i ? 'var(--coral)' : 'var(--pink-melo)', color: openFaq === i ? '#fff' : 'var(--coral)', display: 'grid', placeItems: 'center', flexShrink: 0, transition: 'transform .25s', transform: openFaq === i ? 'rotate(180deg)' : 'none' }}>
@@ -500,6 +502,36 @@ export default function HomePage() {
         </div>
       </section>
       </FadeUp>
+      <style jsx global>{`
+        .home-carousel .swiper-pagination {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+        }
+        .home-carousel .swiper-pagination-bullet {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          margin: 0 !important;
+          padding: 0;
+          background: transparent !important;
+          opacity: 1;
+        }
+        .home-carousel .swiper-pagination-bullet::after {
+          content: '';
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--coral);
+          opacity: .3;
+        }
+        .home-carousel .swiper-pagination-bullet-active::after {
+          opacity: 1;
+        }
+      `}</style>
     </main>
   )
 }
