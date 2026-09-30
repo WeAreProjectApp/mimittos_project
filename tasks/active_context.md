@@ -5,6 +5,28 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Rendimiento e Inicio — 2026-09-30
+
+Rama `fix/30092026-perf-home-round`, PR #76 hacia `main`. La creación legacy de
+ventas agrupa las lecturas de productos y conserva una línea por entrada, incluso
+si se repite el producto. La respuesta reutiliza los productos precargados;
+las escrituras y el error por identificador inexistente mantienen su contrato.
+Blogs comparte sólo solicitudes simultáneas: un refresco posterior vuelve a consultar.
+Los gráficos del dashboard se cargan en un módulo diferido al recibir analytics.
+
+Inicio ajusta el título en móvil y tablet, distribuye reseñas en dos columnas a
+835 px y ofrece objetivos táctiles de 44 × 44 px en sus carruseles. Se conserva
+el contenido y la navegación. La matriz de aceptación tiene cinco anchuras,
+con presets y pruebas en el módulo dueño; el mapa incorpora las preguntas frecuentes.
+
+Las pruebas de esta ronda usan SQLite aislada y respuestas locales controladas.
+Build de producción y TypeScript aprobados; la evidencia de presupuestos y QA
+se registra en el toolkit. No se certifican memoria total ni latencia MySQL de
+producción para ventas sin límite de líneas. La paginación y el rediseño de
+escrituras quedan como escalaciones de contrato. Los listados completos de
+ventas y pedidos administrativos quedan como candidatos nuevos para otra ronda.
+Entrega de sesión: PR abierto con CI verde, comprobado sobre el último commit.
+
 ## Rendimiento — ventas y filtros administrativos (2026-09-27)
 
 Rama `fix/27092026-perf-sales-order-filters`, desde main; PR #74.
