@@ -4,7 +4,14 @@ import { useEffect, useState } from 'react'
 
 import { orderService } from '@/lib/services/orderService'
 import { itemSizeLabel, itemSizeCm, itemColorName, itemColorHex } from '@/lib/utils/orderItemDisplay'
-import type { OrderDetail, OrderItemRead, OrderListItem, OrderStatus } from '@/lib/types'
+import type { OrderDetail, OrderItemRead, OrderListItem, OrderStatus, PaginatedResponse } from '@/lib/types'
+
+const ORDERS_PAGE_SIZE = 100
+
+interface OrdersQuery {
+  status: OrderStatus | ''
+  page: number
+}
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'pending_payment', 'payment_confirmed', 'in_production', 'shipped', 'delivered', 'cancelled',
@@ -45,8 +52,9 @@ function fmtDate(s: string) { return new Date(s).toLocaleDateString('es-CO', { d
 function fmtDateTime(s: string) { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
 
 export default function PedidosAdminPage() {
-  const [orders, setOrders] = useState<OrderListItem[]>([])
-  const [filter, setFilter] = useState<OrderStatus | ''>('')
+  const [query, setQuery] = useState<OrdersQuery>({ status: '', page: 1 })
+  const [listResponse, setListResponse] = useState<PaginatedResponse<OrderListItem> | null>(null)
+  const [resolvedQuery, setResolvedQuery] = useState<OrdersQuery | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null)
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({})
@@ -57,21 +65,37 @@ export default function PedidosAdminPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
 
+  const { status: filter, page } = query
+  const response = resolvedQuery === query ? listResponse : null
+  const orders = response?.results ?? []
+  const isLoading = loading || resolvedQuery !== query
+  const listError = resolvedQuery === query ? error : ''
+  const totalPages = Math.max(1, Math.ceil((response?.count ?? 0) / ORDERS_PAGE_SIZE))
+  const previousDisabled = isLoading || !!listError || !response?.previous
+  const nextDisabled = isLoading || !!listError || !response?.next
+
   useEffect(() => {
     const controller = new AbortController()
     let active = true
 
     async function loadOrders() {
       setLoading(true)
+      setListResponse(null)
       setError('')
       try {
         const data = await orderService.listOrders(
-          filter ? { status: filter } : undefined,
+          { page: query.page, page_size: ORDERS_PAGE_SIZE, ...(query.status ? { status: query.status } : {}) },
           { signal: controller.signal },
         )
-        if (active) setOrders(data)
+        if (active) {
+          setListResponse(data)
+          setResolvedQuery(query)
+        }
       } catch {
-        if (active) setError('No se pudieron cargar los pedidos.')
+        if (active) {
+          setError('No se pudieron cargar los pedidos.')
+          setResolvedQuery(query)
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -82,7 +106,7 @@ export default function PedidosAdminPage() {
       active = false
       controller.abort()
     }
-  }, [filter])
+  }, [query])
 
   useEffect(() => {
     if (!detailOrderNumber) return
@@ -95,11 +119,20 @@ export default function PedidosAdminPage() {
       .finally(() => setDetailLoading(false))
   }, [detailOrderNumber])
 
+  function handleFilterChange(status: OrderStatus | '') {
+    setQuery((current) => current.status === status && current.page === 1
+      ? current
+      : { status, page: 1 })
+  }
+
   async function handleStatusChange(orderNumber: string, newStatus: string) {
     setStatusUpdating(orderNumber)
     try {
       await orderService.updateStatus(orderNumber, newStatus)
-      setOrders((prev) => prev.map((o) => o.order_number === orderNumber ? { ...o, status: newStatus as OrderStatus } : o))
+      setListResponse((prev) => prev ? {
+        ...prev,
+        results: prev.results.map((o) => o.order_number === orderNumber ? { ...o, status: newStatus as OrderStatus } : o),
+      } : prev)
     } catch {
       alert('No se pudo actualizar el estado.')
     } finally {
@@ -128,22 +161,46 @@ export default function PedidosAdminPage() {
     <div style={{ padding: '30px 40px 60px' }}>
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 28, color: 'var(--navy)', marginBottom: 4 }}>Pedidos</h1>
-        <p style={{ color: 'var(--gray-warm)', fontSize: 14 }}>Gestión de producción y envíos — {orders.length} pedido(s) · clic en una fila para ver el detalle</p>
+        <p style={{ color: 'var(--gray-warm)', fontSize: 14 }}>Gestión de producción y envíos{response ? ` — ${response.count} pedido(s)` : ''} · clic en una fila para ver el detalle</p>
       </div>
 
       {/* Filtro por estado */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        <button onClick={() => setFilter('')} style={filterBtn(!filter)}>Todos</button>
+        <button type="button" onClick={() => handleFilterChange('')} style={filterBtn(!filter)}>Todos</button>
         {STATUS_OPTIONS.map((s) => (
-          <button key={s} onClick={() => setFilter(s)} style={filterBtn(filter === s)}>{STATUS_LABELS[s]}</button>
+          <button key={s} type="button" onClick={() => handleFilterChange(s)} style={filterBtn(filter === s)}>{STATUS_LABELS[s]}</button>
         ))}
       </div>
 
-      {error && <p style={{ color: '#c23b3b', marginBottom: 16 }}>{error}</p>}
-      {loading && <p style={{ color: 'var(--gray-warm)', marginBottom: 16 }}>Cargando...</p>}
+      {listError && <p role="alert" style={{ color: '#c23b3b', marginBottom: 16 }}>{listError}</p>}
+      {isLoading && <p role="status" style={{ color: 'var(--gray-warm)', marginBottom: 16 }}>Cargando...</p>}
+
+      <nav aria-label="Paginación de pedidos" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>
+        <p aria-live="polite" style={{ color: 'var(--gray-warm)', fontSize: 14 }}>
+          Página {page}{response ? ` de ${totalPages}` : ''}
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button
+            type="button"
+            aria-label="Página anterior"
+            aria-controls="orders-table"
+            disabled={previousDisabled}
+            onClick={() => setQuery((current) => ({ ...current, page: current.page - 1 }))}
+            style={paginationBtn(previousDisabled)}
+          >Anterior</button>
+          <button
+            type="button"
+            aria-label="Página siguiente"
+            aria-controls="orders-table"
+            disabled={nextDisabled}
+            onClick={() => setQuery((current) => ({ ...current, page: current.page + 1 }))}
+            style={paginationBtn(nextDisabled)}
+          >Siguiente</button>
+        </div>
+      </nav>
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <table id="orders-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--cream-warm)', borderBottom: '1px dashed rgba(212,132,138,.2)' }}>
               {['Pedido', 'Cliente', 'Ciudad', 'Estado', 'Total', 'Abono', 'Fecha', 'Actualizar estado', 'Guía'].map((h) => (
@@ -199,7 +256,7 @@ export default function PedidosAdminPage() {
                 </tr>
               )
             })}
-            {!orders.length && !loading && (
+            {!orders.length && !isLoading && !listError && (
               <tr><td colSpan={9} style={{ padding: '40px 14px', textAlign: 'center', color: 'var(--gray-warm)' }}>Sin pedidos</td></tr>
             )}
           </tbody>
@@ -390,5 +447,9 @@ const sectionTitle: React.CSSProperties = { fontFamily: "'Quicksand', sans-serif
 const thStyle: React.CSSProperties = { padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--navy)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '10px 14px' }
 function filterBtn(active: boolean): React.CSSProperties {
-  return { padding: '8px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, border: `1.5px solid ${active ? 'var(--coral)' : 'rgba(27,42,74,.08)'}`, background: active ? 'var(--coral)' : '#fff', color: active ? '#fff' : 'var(--navy)', cursor: 'pointer', fontFamily: 'inherit' }
+  return { minHeight: 44, padding: '8px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, border: `1.5px solid ${active ? 'var(--coral)' : 'rgba(27,42,74,.08)'}`, background: active ? 'var(--coral)' : '#fff', color: active ? '#fff' : 'var(--navy)', cursor: 'pointer', fontFamily: 'inherit' }
+}
+
+function paginationBtn(disabled: boolean): React.CSSProperties {
+  return { minHeight: 44, minWidth: 44, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid rgba(27,42,74,.1)', background: '#fff', color: 'var(--navy)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, fontFamily: 'inherit' }
 }

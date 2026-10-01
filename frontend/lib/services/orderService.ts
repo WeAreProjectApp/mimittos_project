@@ -5,6 +5,7 @@ import type {
   OrderDetail,
   OrderListItem,
   OrderTrackingInfo,
+  PaginatedResponse,
   PaymentMode,
 } from '../types'
 
@@ -57,8 +58,11 @@ export const orderService = {
   getOrderDetail: (orderNumber: string) =>
     api.get<OrderDetail>(`/orders/${orderNumber}/`).then((r) => r.data),
 
-  listOrders: (params?: { status?: string; city?: string }, options?: { signal?: AbortSignal }) =>
-    api.get<OrderListItem[]>('/orders/list/', { params, ...options }).then((r) => r.data),
+  listOrders: (
+    params?: { status?: string; city?: string; page?: number; page_size?: number },
+    options?: { signal?: AbortSignal },
+  ) =>
+    api.get<PaginatedResponse<OrderListItem>>('/orders/list/', { params, ...options }).then((r) => r.data),
 
   updateStatus: (orderNumber: string, status: string, notes?: string) =>
     api

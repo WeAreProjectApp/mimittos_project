@@ -515,7 +515,7 @@ def test_orders_list_returns_200_for_admin(admin_client, existing_order):
     """Verify orders list returns 200 for admin."""
     response = admin_client.get('/api/orders/list/')
     assert response.status_code == 200
-    assert len(response.data) == 1
+    assert response.data['count'] == 1
 
 
 @pytest.mark.django_db
@@ -530,7 +530,7 @@ def test_orders_list_filters_by_status(admin_client, existing_order):
     """Verify orders list filters by status."""
     response = admin_client.get('/api/orders/list/?status=pending_payment')
     assert response.status_code == 200
-    assert len(response.data) == 1
+    assert response.data['count'] == 1
 
 
 @pytest.mark.django_db
@@ -538,7 +538,7 @@ def test_orders_list_filters_by_city(admin_client, existing_order):
     """Verify orders list filters by city."""
     response = admin_client.get('/api/orders/list/?city=Bogotá')
     assert response.status_code == 200
-    assert len(response.data) == 1
+    assert response.data['count'] == 1
 
 
 @pytest.mark.django_db
@@ -546,7 +546,7 @@ def test_orders_list_returns_empty_for_unmatched_city(admin_client, existing_ord
     """Verify orders list returns empty for unmatched city."""
     response = admin_client.get('/api/orders/list/?city=NoExiste')
     assert response.status_code == 200
-    assert len(response.data) == 0
+    assert response.data['count'] == 0
 
 
 # ---------------------------------------------------------------------------

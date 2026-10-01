@@ -1,6 +1,6 @@
 {
-  "version": "1.5.3",
-  "lastUpdated": "2026-09-30",
+  "version": "1.5.4",
+  "lastUpdated": "2026-10-01",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -716,7 +716,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Staff on /backoffice/pedidos views order list and updates status via PATCH /api/orders/{number}/status/",
+      "description": "Staff on /backoffice/pedidos views the initial paginated order table, its total order count, and status/tracking controls.",
       "expectedSpecs": 1,
       "outcomes": [
         "display",
@@ -1325,7 +1325,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Staff opens Pedidos from the backoffice and selects a status filter. GET /api/orders/list/?status=<status> replaces the table only when it is the current request; superseded filter requests are aborted and cannot overwrite the latest result.",
+      "description": "Staff opens Pedidos from the backoffice and selects a status filter. The change resets the list to page 1; GET /api/orders/list/?page=1&page_size=100&status=<status> replaces the table only when it is the current request, while superseded filter requests are aborted and cannot overwrite the latest result.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1343,6 +1343,20 @@
       "expectedSpecs": 5,
       "outcomes": [
         "success"
+      ]
+    },
+    "backoffice-order-pagination": {
+      "name": "Paginate backoffice orders",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P2",
+      "description": "Staff uses the enabled Página siguiente or Página anterior control on /backoffice/pedidos. GET /api/orders/list/?page=<n>&page_size=100 retains the selected status filter and replaces the rows with that page; unavailable directions are disabled. An active page request failure shows a visible loading error.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "success",
+        "failure"
       ]
     }
   }

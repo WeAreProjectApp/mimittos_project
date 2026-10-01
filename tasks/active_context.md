@@ -5,6 +5,26 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Listados acotados y directorio de usuarios — 2026-10-01
+
+La ronda transversal amplía el PR #76 en la misma rama de sesión.
+El listado y detalle de usuarios requieren staff antes de consultar sus datos.
+Los clientes autenticados reciben 403, incluso para un identificador inexistente;
+las escrituras mantienen su contrato anterior.
+
+Ventas y pedidos administrativos devuelven `count`, `next`, `previous` y
+`results`, con páginas predeterminadas y máximas de 100 registros. Ventas
+conserva su acceso existente; pedidos sigue reservado a staff y aplica sus
+filtros antes de paginar. La pantalla muestra el total del servidor, permite
+avanzar y retroceder y vuelve a página 1 al cambiar el filtro. Una solicitud
+reemplazada no publica filas, totales, errores ni estado de carga.
+
+La validación combinada usa SQLite aislada y APIs controladas en un servidor
+Next local. Resultados y evidencia de esta ronda:
+`docs/audits/2026-10-01-mimittos_project-improvement-pass-project-improvement-20261001-lists-users.md`
+en el toolkit. El cierre requiere comprobar CI del último commit del PR,
+sin merge ni deploy. Los otros hallazgos permanecen pendientes por cupo o evidencia.
+
 ## Rendimiento e Inicio — 2026-09-30
 
 Rama `fix/30092026-perf-home-round`, PR #76 hacia `main`. La creación legacy de

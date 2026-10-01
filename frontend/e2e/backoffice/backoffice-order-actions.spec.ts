@@ -1,5 +1,5 @@
 import { test, expect } from '../test-with-coverage';
-import type { Page, Route } from '@playwright/test';
+import type { Page, Route, TestInfo } from '@playwright/test';
 import { waitForPageLoad } from '../fixtures';
 import {
   BACKOFFICE_ORDER_FILTER,
@@ -34,10 +34,22 @@ const ordersList = [
   },
 ];
 
-async function setupAdminMocks(page: Page) {
+function ordersEnvelope(results: typeof ordersList) {
+  return { count: results.length, next: null, previous: null, results };
+}
+
+function appOrigin(testInfo: TestInfo) {
+  const baseURL = testInfo.project.use.baseURL;
+  if (!baseURL) throw new Error('Playwright requires project.use.baseURL for local API isolation');
+  return new URL(baseURL).origin;
+}
+
+async function setupAdminMocks(page: Page, testInfo: TestInfo) {
+  const origin = appOrigin(testInfo);
+  await page.route((url) => url.origin !== origin, (route) => route.abort());
   await page.context().addCookies([
-    { name: 'access_token', value: 'mock-admin-access', domain: 'localhost', path: '/' },
-    { name: 'refresh_token', value: 'mock-admin-refresh', domain: 'localhost', path: '/' },
+    { name: 'access_token', value: 'mock-admin-access', domain: new URL(origin).hostname, path: '/' },
+    { name: 'refresh_token', value: 'mock-admin-refresh', domain: new URL(origin).hostname, path: '/' },
   ]);
   await page.route('**/api/validate_token/', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ valid: true, user: adminUser }) }),
@@ -60,7 +72,7 @@ async function setupAdminMocks(page: Page) {
     }),
   );
   await page.route(/\/api\/orders\/list\/?(\?.*)?$/, (route: Route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ordersList) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ordersEnvelope(ordersList)) }),
   );
 }
 
@@ -96,7 +108,7 @@ function createSupersededFilterRoute(initialOrders: typeof ordersList, shippedOr
         productionRouteStarted();
         await keepProductionPending;
         try {
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...ordersList[0], customer_name: 'Respuesta obsoleta' }]) });
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ordersEnvelope([{ ...ordersList[0], customer_name: 'Respuesta obsoleta' }])) });
           resolveProductionFinished();
         } catch (error) {
           rejectProductionFinished(error);
@@ -107,7 +119,7 @@ function createSupersededFilterRoute(initialOrders: typeof ordersList, shippedOr
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(status === 'shipped' ? shippedOrders : initialOrders),
+        body: JSON.stringify(ordersEnvelope(status === 'shipped' ? shippedOrders : initialOrders)),
       });
     },
   };
@@ -117,8 +129,8 @@ function createSupersededFilterRoute(initialOrders: typeof ordersList, shippedOr
 test(
   'should send PATCH /status when staff changes order status select',
   { tag: [...BACKOFFICE_ORDER_STATUS_UPDATE, '@outcome:success'] },
-  async ({ page }) => {
-    await setupAdminMocks(page);
+  async ({ page }, testInfo) => {
+    await setupAdminMocks(page, testInfo);
 
     const statusRequest = page.waitForRequest(
       (req) => req.url().includes(`/api/orders/${ORDER_NUMBER}/status/`) && req.method() === 'PATCH',
@@ -147,8 +159,8 @@ test(
 test(
   'should send PATCH /tracking when staff submits a tracking number',
   { tag: [...BACKOFFICE_ORDER_TRACKING_UPDATE, '@outcome:success'] },
-  async ({ page }) => {
-    await setupAdminMocks(page);
+  async ({ page }, testInfo) => {
+    await setupAdminMocks(page, testInfo);
 
     const trackingRequest = page.waitForRequest(
       (req) => req.url().includes(`/api/orders/${ORDER_NUMBER}/tracking/`) && req.method() === 'PATCH',
@@ -178,8 +190,8 @@ test(
 test(
   'keeps the latest status-filtered orders after the previous request is aborted',
   { tag: [...BACKOFFICE_ORDER_FILTER, '@outcome:success'] },
-  async ({ page }) => {
-    await setupAdminMocks(page);
+  async ({ page }, testInfo) => {
+    await setupAdminMocks(page, testInfo);
 
     const initialOrders = [
       { ...ordersList[0], order_number: 'PELUCH-INITIAL-0001', customer_name: 'Pedido inicial' },
@@ -216,8 +228,8 @@ test(
 test(
   'shows a visible error when the selected status filter request fails',
   { tag: [...BACKOFFICE_ORDER_FILTER, '@outcome:failure'] },
-  async ({ page }) => {
-    await setupAdminMocks(page);
+  async ({ page }, testInfo) => {
+    await setupAdminMocks(page, testInfo);
 
     await page.unroute(/\/api\/orders\/list\/?(\?.*)?$/);
     await page.route(/\/api\/orders\/list\/?(\?.*)?$/, (route: Route) => {
@@ -225,7 +237,7 @@ test(
       if (status === 'in_production') {
         return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'backend unavailable' }) });
       }
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ordersList) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ordersEnvelope(ordersList)) });
     });
 
     await openOrdersFromDashboard(page);

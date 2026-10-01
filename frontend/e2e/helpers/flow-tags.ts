@@ -172,3 +172,4 @@ export const BACKOFFICE_PROMO_BANNER_SAVE = ['@flow:backoffice-promo-banner-save
 export const BACKOFFICE_HERO_IMAGE_UPLOAD = ['@flow:backoffice-hero-image-upload', '@module:backoffice', '@priority:P3'];
 
 export const BACKOFFICE_ORDER_FILTER = ['@flow:backoffice-order-filter', '@module:backoffice', '@priority:P2'];
+export const BACKOFFICE_ORDER_PAGINATION = ['@flow:backoffice-order-pagination', '@module:backoffice', '@priority:P2'];

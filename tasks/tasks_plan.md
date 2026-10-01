@@ -5,6 +5,19 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal — 2026-10-01
+
+- [x] Restringir lecturas del directorio de usuarios a staff (`I-S-1421690fa05c`).
+- [x] Paginar ventas conservando campos y acceso (`P-backend-views-02`).
+- [x] Paginar pedidos, mantener filtros y adaptar navegación administrativa (`P-backend-views-03`).
+- Validación requerida: permisos, páginas y filtros, consultas y payload acotados,
+  solicitudes fuera de orden, acciones de pedidos y cinco anchos para los controles nuevos.
+- Entrega: ampliar PR #76 y comprobar su CI sobre el commit final; evidencia
+  por ronda en el ledger común y reporte del toolkit. Sin merge ni deploy.
+
+Se detiene en tres causas globales. Observabilidad, mantenibilidad y navegación
+pública conservan hallazgos pendientes; el cupo no certifica suficiencia.
+
 ## Ronda de rendimiento e Inicio — 2026-09-30
 
 - [x] Agrupar lecturas al crear ventas sin alterar líneas, cantidades ni errores (`P-backend-queries-11`).

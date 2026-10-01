@@ -12,6 +12,7 @@ from base_feature_app.serializers.order import (
 )
 from base_feature_app.services.order_service import OrderService
 from base_feature_app.services.notification_service import NotificationService
+from base_feature_app.utils.pagination import BoundedListPagination
 
 
 @api_view(['POST'])
@@ -95,8 +96,10 @@ def orders_list(request):
     if city_filter:
         qs = qs.filter(city__icontains=city_filter)
 
-    serializer = OrderListSerializer(qs, many=True)
-    return Response(serializer.data)
+    paginator = BoundedListPagination()
+    page = paginator.paginate_queryset(qs.order_by('-created_at', '-id'), request)
+    serializer = OrderListSerializer(page, many=True)
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(['GET'])

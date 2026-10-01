@@ -139,3 +139,6 @@ test-results/test-quality-report.json
 /frontend/all-blob-reports/
 /coverage-artifacts/
 /coverage-report.md
+
+# Transient QA conductor marker
+/.qa-gate-pending

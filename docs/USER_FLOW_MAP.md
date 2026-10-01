@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.3
-**Last Updated:** 2026-09-30
+**Version:** 1.5.4
+**Last Updated:** 2026-10-01
 
 ---
 
@@ -61,6 +61,7 @@ Use this document to understand each flow's steps, branching conditions, role re
 | `backoffice-dashboard-display` | Backoffice Dashboard | backoffice | P2 | staff | `/backoffice` |
 | `backoffice-order-management` | Order Management | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-order-filter` | Filter Backoffice Orders by Status | backoffice | P2 | staff | `/backoffice/pedidos` |
+| `backoffice-order-pagination` | Paginate Backoffice Orders | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-peluch-list` | Peluch List | backoffice | P3 | staff | `/backoffice/peluches` |
 | `backoffice-peluch-create` | Create Peluch | backoffice | P3 | staff | `/backoffice/peluches/nuevo` |
 | `backoffice-peluch-edit` | Edit Peluch | backoffice | P3 | staff | `/backoffice/peluches/[slug]` |
@@ -1030,15 +1031,15 @@ Use this document to understand each flow's steps, branching conditions, role re
 | **Priority** | P2 |
 | **Roles** | staff |
 | **Frontend route** | `/backoffice/pedidos` |
-| **API endpoints** | `GET /api/orders/list/`, `PATCH /api/orders/{number}/status/`, `PATCH /api/orders/{number}/tracking/` |
+| **API endpoints** | `GET /api/orders/list/?page=<n>&page_size=100`, `PATCH /api/orders/{number}/status/`, `PATCH /api/orders/{number}/tracking/` |
 
 **Preconditions:** User is authenticated with `is_staff = true`.
 
 **Steps:**
 
 1. User navigates to `/backoffice/pedidos`.
-2. Frontend fetches `GET /api/orders/list/` (with optional status/city filters).
-3. Orders render in a table: order_number, customer_name, status badge, total_amount, created_at.
+2. El frontend consulta `GET /api/orders/list/?page=1&page_size=100`.
+3. La tabla muestra las filas de esa página, el total del servidor y `Página 1 de N`.
 4. Staff clicks a status dropdown on a row → `PATCH /api/orders/{number}/status/` updates the status.
 5. Staff enters a tracking number → `PATCH /api/orders/{number}/tracking/` saves carrier + guide.
 
@@ -1046,7 +1047,7 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 | Condition | Behavior |
 |-----------|----------|
-| No orders | "No data" empty row |
+| No orders | `Sin pedidos` después de una respuesta vacía |
 | Status update fails | Error toast |
 
 ---
@@ -1703,22 +1704,45 @@ These flows were registered after the "incremental color image upload" feature w
 
 **Role:** staff · **Priority:** P2 · **Route:** `/backoffice/pedidos`.
 
-Staff opens Pedidos from the backoffice dashboard, then selects a status button
-or Todos. The page calls `GET /api/orders/list/?status=<status>` (without status
-for Todos), replaces rows from the current response, and updates the order count.
-Changing the filter or leaving the page aborts the previous request. Its late
-success, rejection, or completion cannot change the current rows, error, or loading.
+Staff abre Pedidos desde el dashboard y selecciona un estado o Todos.
+El filtro vuelve a página 1 y consulta
+`GET /api/orders/list/?page=1&page_size=100&status=<status>`, sin estado para Todos.
+Sólo la respuesta vigente publica filas y el total del servidor.
+Cambiar de filtro o abandonar la página aborta la consulta anterior; su éxito,
+rechazo o finalización tardíos no cambian las filas, error o carga actuales.
 
 | Class | Behavior |
 |-------|----------|
-| success | Only the selected status response populates the table after older requests settle. |
+| success | El filtro consulta página 1 y sólo su respuesta vigente publica las filas. |
 | error | n/a: fixed status buttons accept no free-form input; authorization belongs to the existing backoffice guard. |
 | failure | The active request fails and shows `No se pudieron cargar los pedidos.`; superseded requests cannot show an error. |
-| display | Initial table, loading, and empty states belong to existing `backoffice-order-management`. |
+| display | Tabla inicial, total, carga y vacío pertenecen a `backoffice-order-management`. |
 
-An empty current response shows `Sin pedidos`. Selectors use accessible status
-buttons and `data-testid="order-row-<order_number>"`. Dedicated E2E outcomes are
-success and failure; local intercepted API responses provide distinguishable rows.
+Una respuesta vigente vacía muestra `Sin pedidos`. Los selectores usan botones
+accesibles y `data-testid="order-row-<order_number>"`; E2E cubre éxito y fallo
+con respuestas controladas que contienen filas distinguibles.
+
+## Pedidos — ronda del 1 de octubre de 2026
+
+### backoffice-order-pagination
+
+**Role:** staff · **Priority:** P2 · **Route:** `/backoffice/pedidos`.
+
+Staff usa **Página siguiente** o **Página anterior** cuando la respuesta vigente
+permite avanzar o retroceder. La pantalla consulta
+`GET /api/orders/list/?page=<n>&page_size=100`, conserva el filtro seleccionado
+y reemplaza las filas por las de esa página. Anuncia `Página N de M`;
+las direcciones sin página disponible quedan deshabilitadas.
+
+| Class | Behavior |
+|-------|----------|
+| success | Avanzar o retroceder muestra las filas de la página solicitada. |
+| error | n/a: no hay entrada libre de página; los controles acotados impiden solicitar una dirección inexistente. |
+| failure | El fallo vigente muestra `No se pudieron cargar los pedidos.` y deshabilita ambas direcciones. |
+| display | Filas iniciales, total, indicador de página, carga y vacío pertenecen a `backoffice-order-management`. |
+
+Selectores: navegación `Paginación de pedidos`, botones `Página siguiente` /
+`Página anterior` y filas `data-testid="order-row-<order_number>"`.
 
 
 ## Inicio — ronda del 30 de septiembre de 2026
