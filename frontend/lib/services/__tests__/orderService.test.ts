@@ -90,22 +90,40 @@ describe('orderService', () => {
       expect(mockGet).toHaveBeenCalledWith('/orders/list/', { params })
     })
 
-    it('forwards an optional abort signal with the status filter', async () => {
-      const controller = new AbortController()
-      const orders = [{ order_number: 'MIM-PROD-001', status: 'in_production' }]
-      mockGet.mockResolvedValue({ data: orders })
+    it('returns the paginated order envelope without flattening its metadata', async () => {
+      const page = {
+        count: 201,
+        next: 'https://api.example.test/orders/list/?page=3',
+        previous: 'https://api.example.test/orders/list/?page=1',
+        results: [{ order_number: 'MIM-PROD-001', status: 'in_production' }],
+      }
+      mockGet.mockResolvedValue({ data: page })
 
       const result = await orderService.listOrders(
-        { status: 'in_production' },
+        { status: 'in_production', page: 2, page_size: 100 },
+      )
+
+      // Fails if pagination parameters or response links are lost at the API boundary.
+      expect(mockGet).toHaveBeenCalledWith('/orders/list/', {
+        params: { status: 'in_production', page: 2, page_size: 100 },
+      })
+      expect(result).toEqual(page)
+    })
+
+    it('forwards an abort signal with the paginated order request', async () => {
+      const controller = new AbortController()
+      mockGet.mockResolvedValue({ data: { count: 0, next: null, previous: null, results: [] } })
+
+      await orderService.listOrders(
+        { status: 'in_production', page: 2, page_size: 100 },
         { signal: controller.signal },
       )
 
-      // Fails if the backoffice cannot cancel a superseded filtered request at the API boundary.
+      // Fails if a superseded paginated request cannot be cancelled at the API boundary.
       expect(mockGet).toHaveBeenCalledWith('/orders/list/', {
-        params: { status: 'in_production' },
+        params: { status: 'in_production', page: 2, page_size: 100 },
         signal: controller.signal,
       })
-      expect(result).toEqual(orders)
     })
   })
 

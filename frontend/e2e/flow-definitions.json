@@ -1,6 +1,6 @@
 {
-  "version": "1.5.2",
-  "lastUpdated": "2026-09-27",
+  "version": "1.5.4",
+  "lastUpdated": "2026-10-01",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -9,8 +9,8 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "Home page renders with main heading visible",
-      "expectedSpecs": 1,
+      "description": "Home page shows its heading, product offers and review content within the viewport at the five project widths; compact and portrait headings fit in two lines.",
+      "expectedSpecs": 5,
       "outcomes": [
         "display"
       ]
@@ -36,7 +36,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User clicks 'Shop now' on home page and navigates to catalog then product detail",
+      "description": "User follows the home catalog link to /catalog and sees the offered products.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -49,8 +49,8 @@
         "shared"
       ],
       "priority": "P3",
-      "description": "User clicks a product from the home page carousel and reaches the detail page",
-      "expectedSpecs": 1,
+      "description": "User selects a featured product with the home carousel pagination at compact and portrait widths, then follows its card to the matching detail page. Pagination targets remain at least 44 by 44 pixels.",
+      "expectedSpecs": 2,
       "outcomes": [
         "success"
       ]
@@ -716,7 +716,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Staff on /backoffice/pedidos views order list and updates status via PATCH /api/orders/{number}/status/",
+      "description": "Staff on /backoffice/pedidos views the initial paginated order table, its total order count, and status/tracking controls.",
       "expectedSpecs": 1,
       "outcomes": [
         "display",
@@ -1084,8 +1084,8 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff clicks the '↓ CSV' button on /backoffice; analyticsAdminService.exportOrdersCSV downloads a CSV file scoped to the current date range",
-      "expectedSpecs": 1,
+      "description": "Staff exports the selected period as a CSV download; an export failure shows its existing error alert and restores the action.",
+      "expectedSpecs": 2,
       "outcomes": [
         "success",
         "failure"
@@ -1325,7 +1325,34 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Staff opens Pedidos from the backoffice and selects a status filter. GET /api/orders/list/?status=<status> replaces the table only when it is the current request; superseded filter requests are aborted and cannot overwrite the latest result.",
+      "description": "Staff opens Pedidos from the backoffice and selects a status filter. The change resets the list to page 1; GET /api/orders/list/?page=1&page_size=100&status=<status> replaces the table only when it is the current request, while superseded filter requests are aborted and cannot overwrite the latest result.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "success",
+        "failure"
+      ]
+    },
+    "home-faq": {
+      "name": "Read home frequently asked questions",
+      "module": "home",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P3",
+      "description": "User expands and collapses an existing home question at each project width; its answer stays readable within the page.",
+      "expectedSpecs": 5,
+      "outcomes": [
+        "success"
+      ]
+    },
+    "backoffice-order-pagination": {
+      "name": "Paginate backoffice orders",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P2",
+      "description": "Staff uses the enabled Página siguiente or Página anterior control on /backoffice/pedidos. GET /api/orders/list/?page=<n>&page_size=100 retains the selected status filter and replaces the rows with that page; unavailable directions are disabled. An active page request failure shows a visible loading error.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",

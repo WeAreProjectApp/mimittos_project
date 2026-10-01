@@ -73,6 +73,17 @@ const sampleOrderDetail = {
   ],
 }
 
+type OrdersPage = {
+  count: number
+  next: string | null
+  previous: string | null
+  results: typeof sampleOrder[]
+}
+
+function ordersPage(results: typeof sampleOrder[], overrides: Partial<OrdersPage> = {}): OrdersPage {
+  return { count: results.length, next: null, previous: null, results, ...overrides }
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -86,7 +97,7 @@ function deferred<T>() {
 describe('PedidosAdminPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockListOrders.mockResolvedValue([])
+    mockListOrders.mockResolvedValue(ordersPage([]))
     mockUpdateStatus.mockResolvedValue({})
     mockUpdateTracking.mockResolvedValue({})
     mockGetOrderDetail.mockResolvedValue(sampleOrderDetail)
@@ -121,7 +132,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('renders one row per order returned by the service', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     render(<PedidosAdminPage />)
     await waitFor(() => {
       expect(screen.getByText('MIM-001')).toBeInTheDocument()
@@ -139,15 +150,15 @@ describe('PedidosAdminPage', () => {
 
     await waitFor(() => expect(mockListOrders).toHaveBeenCalledTimes(2))
     expect(mockListOrders).toHaveBeenLastCalledWith(
-      { status: 'in_production' },
+      { status: 'in_production', page: 1, page_size: 100 },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
   })
 
   it('keeps the newest status results when superseded requests resolve late', async () => {
-    const initialRequest = deferred<typeof sampleOrder[]>()
-    const productionRequest = deferred<typeof sampleOrder[]>()
-    const shippedRequest = deferred<typeof sampleOrder[]>()
+    const initialRequest = deferred<OrdersPage>()
+    const productionRequest = deferred<OrdersPage>()
+    const shippedRequest = deferred<OrdersPage>()
     mockListOrders
       .mockReturnValueOnce(initialRequest.promise)
       .mockReturnValueOnce(productionRequest.promise)
@@ -167,11 +178,11 @@ describe('PedidosAdminPage', () => {
     expect(productionOptions.signal.aborted).toBe(true)
 
     await act(async () => {
-      shippedRequest.resolve([{ ...sampleOrder, order_number: 'MIM-SHIP-NEW', customer_name: 'Pedido vigente' }])
+      shippedRequest.resolve(ordersPage([{ ...sampleOrder, order_number: 'MIM-SHIP-NEW', customer_name: 'Pedido vigente' }]))
       await Promise.resolve()
     })
     await act(async () => {
-      initialRequest.resolve([{ ...sampleOrder, order_number: 'MIM-OLD', customer_name: 'Pedido antiguo' }])
+      initialRequest.resolve(ordersPage([{ ...sampleOrder, order_number: 'MIM-OLD', customer_name: 'Pedido antiguo' }]))
       await Promise.resolve()
     })
 
@@ -181,8 +192,8 @@ describe('PedidosAdminPage', () => {
   })
 
   it('keeps loading when an obsolete request rejects during an active request', async () => {
-    const initialRequest = deferred<typeof sampleOrder[]>()
-    const activeRequest = deferred<typeof sampleOrder[]>()
+    const initialRequest = deferred<OrdersPage>()
+    const activeRequest = deferred<OrdersPage>()
     mockListOrders
       .mockReturnValueOnce(initialRequest.promise)
       .mockReturnValueOnce(activeRequest.promise)
@@ -203,7 +214,7 @@ describe('PedidosAdminPage', () => {
     expect(screen.queryByText('No se pudieron cargar los pedidos.')).not.toBeInTheDocument()
 
     await act(async () => {
-      activeRequest.resolve([{ ...sampleOrder, order_number: 'MIM-PROD-NEW', customer_name: 'Producción vigente' }])
+      activeRequest.resolve(ordersPage([{ ...sampleOrder, order_number: 'MIM-PROD-NEW', customer_name: 'Producción vigente' }]))
       await Promise.resolve()
     })
 
@@ -212,7 +223,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('aborts the active order request when the page unmounts', async () => {
-    const activeRequest = deferred<typeof sampleOrder[]>()
+    const activeRequest = deferred<OrdersPage>()
     mockListOrders.mockReturnValue(activeRequest.promise)
     const { unmount } = render(<PedidosAdminPage />)
 
@@ -225,7 +236,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('updates the order status optimistically when the select changes', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -238,7 +249,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('submits the tracking number when the confirm button is clicked', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -251,7 +262,7 @@ describe('PedidosAdminPage', () => {
 
   it('does not submit tracking when the input is empty', async () => {
     // quality: allow-mock-only (not calling the tracking service is the validation contract for an empty input)
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -262,7 +273,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('alerts when updateStatus rejects', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     mockUpdateStatus.mockRejectedValueOnce(new Error('nope'))
     const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {})
     const user = userEvent.setup()
@@ -276,7 +287,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('alerts when updateTracking rejects', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     mockUpdateTracking.mockRejectedValueOnce(new Error('nope'))
     const alertSpy = jest.spyOn(window, 'alert').mockImplementation(() => {})
     const user = userEvent.setup()
@@ -291,7 +302,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('opens the order detail modal when a row is clicked', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -303,7 +314,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('renders the item size and color in the detail modal', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -317,7 +328,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('renders an audio player with the uploaded audio URL in the detail modal', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 
@@ -329,7 +340,7 @@ describe('PedidosAdminPage', () => {
   })
 
   it('shows an error in the detail modal when getOrderDetail rejects', async () => {
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     mockGetOrderDetail.mockRejectedValueOnce(new Error('boom'))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
@@ -342,7 +353,7 @@ describe('PedidosAdminPage', () => {
 
   it('does not open the detail modal when the status select is changed', async () => {
     // quality: allow-mock-only (changing status must not request order details; the service boundary is the contract)
-    mockListOrders.mockResolvedValueOnce([sampleOrder])
+    mockListOrders.mockResolvedValueOnce(ordersPage([sampleOrder]))
     const user = userEvent.setup()
     render(<PedidosAdminPage />)
 

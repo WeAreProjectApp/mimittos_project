@@ -144,3 +144,30 @@ specs en `e2e/public`, `app`, `auth` y `backoffice`; CI utiliza dos shards.
 `frontend/e2e/flow-definitions.json` conserva el contrato y
 `docs/USER_FLOW_MAP.md` lo documenta. Los módulos eliminados en la limpieza de
 septiembre no eran alcanzables desde las páginas; no se retiran flujos activos.
+
+## Paginación administrativa y permisos — 2026-10-01
+
+`GET /api/sales/` y `GET /api/orders/list/` usan la misma paginación DRF
+con páginas predeterminadas y máximas de 100 registros. La respuesta contiene
+`count`, `next`, `previous` y `results`; los filtros de pedidos se aplican
+antes del límite. Ventas se ordena por ID descendente y pedidos por fecha
+descendente con ID como desempate. Se conservan los campos de cada registro.
+
+El cliente administrativo de pedidos recibe ese sobre y mantiene estado de
+filtro/página como una sola consulta. Cambiar el filtro vuelve a página 1;
+la respuesta sólo se publica mientras esa consulta siga vigente.
+El listado y detalle del directorio de usuarios comprueban staff antes
+de acceder a sus datos. No se cambia el modelo ni las rutas.
+
+## Lecturas y carga de gráficos — 2026-09-30
+
+La creación de ventas legacy resuelve los productos de cada bloque interno con
+`in_bulk`, conserva las escrituras por línea y precarga las líneas con sus productos
+antes de serializar la respuesta. No cambia la transacción ni el contrato del endpoint.
+`blogStore` comparte una promesa sólo mientras el listado está pendiente; al terminar,
+una nueva llamada consulta de nuevo, también después de un error.
+
+El dashboard administrativo conserva KPIs, filtros y exportación en su página.
+`DashboardCharts` concentra Recharts y sus transformaciones, y se importa dinámicamente
+con `ssr: false` cuando los datos de analytics están disponibles. El estado de carga
+sigue mostrando un mensaje mientras ese módulo se descarga.

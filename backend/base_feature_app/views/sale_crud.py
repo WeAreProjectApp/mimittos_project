@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from base_feature_app.models import Sale, SoldProduct
 from base_feature_app.serializers.sale_detail import SaleDetailSerializer
 from base_feature_app.serializers.sale_list import SaleListSerializer
+from base_feature_app.utils.pagination import BoundedListPagination
 
 
 @api_view(['GET'])
@@ -17,8 +18,10 @@ def sales(request):
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
 
     queryset = Sale.objects.all().order_by('-id')
-    serializer = SaleListSerializer(queryset, many=True, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    paginator = BoundedListPagination()
+    page = paginator.paginate_queryset(queryset, request)
+    serializer = SaleListSerializer(page, many=True, context={'request': request})
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(['GET'])

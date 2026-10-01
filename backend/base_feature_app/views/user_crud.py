@@ -15,13 +15,13 @@ def users(request):
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
 
+    if not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == 'GET':
         queryset = User.objects.all().order_by('-id')
         serializer = UserListSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-    if not request.user.is_staff:
-        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = UserCreateUpdateSerializer(data=request.data)
     if serializer.is_valid():
@@ -36,6 +36,9 @@ def users(request):
 def user_detail(request, user_id: int):
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET' and not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         user = User.objects.get(id=user_id)

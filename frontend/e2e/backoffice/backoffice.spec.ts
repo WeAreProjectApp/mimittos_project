@@ -1,4 +1,5 @@
 import { test, expect } from '../test-with-coverage';
+import type { Page, Route, TestInfo } from '@playwright/test';
 import { waitForPageLoad } from '../fixtures';
 import { BACKOFFICE_LOGIN, BACKOFFICE_DASHBOARD_DISPLAY, BACKOFFICE_ORDER_MANAGEMENT, BACKOFFICE_SITE_CONFIG } from '../helpers/flow-tags';
 
@@ -21,6 +22,52 @@ const mockOrder = {
   deposit_amount: 125000,
   created_at: '2026-04-01T10:00:00Z',
 };
+
+function appOrigin(testInfo: TestInfo) {
+  const baseURL = testInfo.project.use.baseURL;
+  if (!baseURL) throw new Error('Playwright requires project.use.baseURL for local API isolation');
+  return new URL(baseURL).origin;
+}
+
+function ordersEnvelope(results: typeof mockOrder[]) {
+  return { count: results.length, next: null, previous: null, results };
+}
+
+async function setupOrdersDisplay(page: Page, testInfo: TestInfo, listStatus = 200) {
+  const origin = appOrigin(testInfo);
+  await page.route((url) => url.origin !== origin, (route) => route.abort());
+  await page.context().addCookies([
+    { name: 'access_token', value: 'fake-admin-access', domain: new URL(origin).hostname, path: '/' },
+    { name: 'refresh_token', value: 'fake-admin-refresh', domain: new URL(origin).hostname, path: '/' },
+  ]);
+  await page.route('**/api/validate_token/**', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ valid: true, user: mockStaff }) }),
+  );
+  await page.route('**/api/analytics/kpis/**', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ new_orders: 1, in_production: 0, pending_dispatch: 0, confirmed_deposits: 0 }) }),
+  );
+  await page.route('**/api/analytics/dashboard/**', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ total_orders: 1, confirmed_revenue: 0, orders_by_status: {}, top_peluches: [], daily_orders: [] }) }),
+  );
+  await page.route(/\/api\/orders\/list\/?(\?.*)?$/, (route: Route) =>
+    route.fulfill({
+      status: listStatus,
+      contentType: 'application/json',
+      body: JSON.stringify(listStatus === 200 ? ordersEnvelope([mockOrder]) : { detail: 'orders unavailable' }),
+    }),
+  );
+}
+
+async function openOrdersFromDashboard(page: Page) {
+  await page.goto('/backoffice');
+  await waitForPageLoad(page);
+  const ordersLink = page.getByRole('navigation').getByRole('link', { name: /Pedidos/ });
+  await expect(ordersLink).toHaveAttribute('href', '/backoffice/pedidos');
+  await Promise.all([
+    page.waitForURL('**/backoffice/pedidos'),
+    ordersLink.click(),
+  ]);
+}
 
 test.describe('Backoffice', () => {
   test(
@@ -110,30 +157,31 @@ test.describe('Backoffice', () => {
   test(
     'should display backoffice orders list with mocked API',
     { tag: [...BACKOFFICE_ORDER_MANAGEMENT, '@outcome:display'] },
-    async ({ page }) => {
-      // quality: allow-no-interaction (admin orders display-class flow; the auth guard is satisfied so the app stays on the orders page)
-      await page.route('**/api/validate_token/**', (route) =>
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ valid: true, user: mockStaff }) })
-      );
-      await page.route('**/api/orders/**', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([mockOrder]),
-        })
-      );
+    async ({ page }, testInfo) => {
+      // Fails if an array-shaped fixture hides the paginated metadata consumed by the orders screen.
+      await setupOrdersDisplay(page, testInfo);
+      await openOrdersFromDashboard(page);
 
-      await page.context().addCookies([
-        { name: 'access_token', value: 'fake-admin-access', domain: 'localhost', path: '/' },
-        { name: 'refresh_token', value: 'fake-admin-refresh', domain: 'localhost', path: '/' },
-      ]);
-
-      await page.goto('/backoffice/pedidos');
-      await waitForPageLoad(page);
-
-      await expect(page.getByRole('heading', { name: 'Pedidos' })).toBeVisible();
-      await expect(page.getByTestId('order-row-MIM-001')).toBeVisible();
+      await expect(page.getByText('Gestión de producción y envíos', { exact: false })).toContainText('Gestión de producción y envíos — 1 pedido(s)');
+      await expect(page.getByText('Página 1 de 1', { exact: true })).toHaveText('Página 1 de 1');
+      await expect(page.getByTestId('order-row-MIM-001')).toContainText('María García');
     }
+  );
+
+  // Fails if the initial orders request fails but stale rows or usable pagination remain on the screen.
+  test(
+    'shows an actionable initial orders load failure',
+    { tag: [...BACKOFFICE_ORDER_MANAGEMENT, '@outcome:failure'] },
+    async ({ page }, testInfo) => {
+      await setupOrdersDisplay(page, testInfo, 500);
+      await openOrdersFromDashboard(page);
+
+      await expect(page.getByRole('alert').filter({ hasText: 'No se pudieron cargar los pedidos.' })).toHaveText('No se pudieron cargar los pedidos.');
+      await expect(page.getByTestId('order-row-MIM-001')).toHaveCount(0);
+      await expect(page.getByText('Sin pedidos', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Página anterior' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Página siguiente' })).toBeDisabled();
+    },
   );
 
   // quality: disable test_too_long (banner config flow: auth + toggle + type message + save + verify success state)

@@ -5,6 +5,29 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal — 2026-10-01
+
+- [x] Restringir lecturas del directorio de usuarios a staff (`I-S-1421690fa05c`).
+- [x] Paginar ventas conservando campos y acceso (`P-backend-views-02`).
+- [x] Paginar pedidos, mantener filtros y adaptar navegación administrativa (`P-backend-views-03`).
+- Validación requerida: permisos, páginas y filtros, consultas y payload acotados,
+  solicitudes fuera de orden, acciones de pedidos y cinco anchos para los controles nuevos.
+- Entrega: ampliar PR #76 y comprobar su CI sobre el commit final; evidencia
+  por ronda en el ledger común y reporte del toolkit. Sin merge ni deploy.
+
+Se detiene en tres causas globales. Observabilidad, mantenibilidad y navegación
+pública conservan hallazgos pendientes; el cupo no certifica suficiencia.
+
+## Ronda de rendimiento e Inicio — 2026-09-30
+
+- [x] Agrupar lecturas al crear ventas sin alterar líneas, cantidades ni errores (`P-backend-queries-11`).
+- [x] Compartir sólo la solicitud pendiente de blogs (`P-frontend-stores-02`).
+- [x] Diferir los gráficos del dashboard y conservar filtros, series y CSV (`P-frontend-components-02`).
+- [x] Corregir título, reseñas y objetivos táctiles de Inicio según el estándar.
+- [x] Abrir [PR #76](https://github.com/WeAreProjectApp/mimittos_project/pull/76) desde el worktree propio.
+- Validación: presupuesto de lecturas y solicitudes, datos de gráficos, cinco anchuras y build de producción; veredicto y evidencia en los reportes perf/responsive/QA de esta ronda en el toolkit.
+- Cierre: verificar CI del último commit en el PR #76. El merge pertenece al operador.
+
 ## Ronda de rendimiento — ventas y filtros (2026-09-27)
 
 - [x] P-backend-queries-10: precargar relaciones del detalle de ventas.
@@ -14,7 +37,7 @@ description: Task backlog, feature completion status, known issues, and test cov
 - [x] Completar quality gate local y auditoría independiente del lote.
 - Entrega: esperar CI verde en el PR #74; el estado vigente se verifica en GitHub. Sin merge.
 
-El candidato nuevo sobre creación de ventas queda en el ledger para otra ronda.
+El candidato sobre creación de ventas se trabaja en la ronda del 30 de septiembre.
 
 ## Ronda de rendimiento — 2026-09-27
 

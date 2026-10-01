@@ -5,6 +5,48 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Listados acotados y directorio de usuarios — 2026-10-01
+
+La ronda transversal amplía el PR #76 en la misma rama de sesión.
+El listado y detalle de usuarios requieren staff antes de consultar sus datos.
+Los clientes autenticados reciben 403, incluso para un identificador inexistente;
+las escrituras mantienen su contrato anterior.
+
+Ventas y pedidos administrativos devuelven `count`, `next`, `previous` y
+`results`, con páginas predeterminadas y máximas de 100 registros. Ventas
+conserva su acceso existente; pedidos sigue reservado a staff y aplica sus
+filtros antes de paginar. La pantalla muestra el total del servidor, permite
+avanzar y retroceder y vuelve a página 1 al cambiar el filtro. Una solicitud
+reemplazada no publica filas, totales, errores ni estado de carga.
+
+La validación combinada usa SQLite aislada y APIs controladas en un servidor
+Next local. Resultados y evidencia de esta ronda:
+`docs/audits/2026-10-01-mimittos_project-improvement-pass-project-improvement-20261001-lists-users.md`
+en el toolkit. El cierre requiere comprobar CI del último commit del PR,
+sin merge ni deploy. Los otros hallazgos permanecen pendientes por cupo o evidencia.
+
+## Rendimiento e Inicio — 2026-09-30
+
+Rama `fix/30092026-perf-home-round`, PR #76 hacia `main`. La creación legacy de
+ventas agrupa las lecturas de productos y conserva una línea por entrada, incluso
+si se repite el producto. La respuesta reutiliza los productos precargados;
+las escrituras y el error por identificador inexistente mantienen su contrato.
+Blogs comparte sólo solicitudes simultáneas: un refresco posterior vuelve a consultar.
+Los gráficos del dashboard se cargan en un módulo diferido al recibir analytics.
+
+Inicio ajusta el título en móvil y tablet, distribuye reseñas en dos columnas a
+835 px y ofrece objetivos táctiles de 44 × 44 px en sus carruseles. Se conserva
+el contenido y la navegación. La matriz de aceptación tiene cinco anchuras,
+con presets y pruebas en el módulo dueño; el mapa incorpora las preguntas frecuentes.
+
+Las pruebas de esta ronda usan SQLite aislada y respuestas locales controladas.
+Build de producción y TypeScript aprobados; la evidencia de presupuestos y QA
+se registra en el toolkit. No se certifican memoria total ni latencia MySQL de
+producción para ventas sin límite de líneas. La paginación y el rediseño de
+escrituras quedan como escalaciones de contrato. Los listados completos de
+ventas y pedidos administrativos quedan como candidatos nuevos para otra ronda.
+Entrega de sesión: PR abierto con CI verde, comprobado sobre el último commit.
+
 ## Rendimiento — ventas y filtros administrativos (2026-09-27)
 
 Rama `fix/27092026-perf-sales-order-filters`, desde main; PR #74.
