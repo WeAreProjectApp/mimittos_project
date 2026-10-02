@@ -5,6 +5,22 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Acceso y limpieza de archivos — 2026-10-02
+
+- [x] Exigir reCAPTCHA también al emisor `/api/token/` (`I-S-3f3f6586dddd`).
+- [x] Separar correo verificado y bloqueo administrativo (`I-S-5e80efb8c293`).
+- [x] Conservar referencia cuando falla borrar un archivo (`I-O-f4fee980342f`).
+- Validación requerida: migración, permisos, códigos y limpieza en pruebas aisladas.
+- Flujos de registro y estados administrativos auditados; la aceptación requiere E2E del commit final.
+- Entrega requerida: reportes/ledger propios publicados y PR abierto con CI verde.
+- Resultado de aceptación y entrega: reporte de la ronda en el toolkit, con SHA y evidencia tipada.
+
+Las cuentas antiguas inactivas conservan su bloqueo; su clasificación es una
+decisión explícita de staff. Los códigos anteriores necesitan reenvío.
+La recuperación futura del seguimiento será mediante código por correo y
+permanece pendiente por el límite global de tres causas. No se aplica migración
+ni deploy desde esta ronda.
+
 ## Ronda transversal — 2026-10-01
 
 - [x] Restringir lecturas del directorio de usuarios a staff (`I-S-1421690fa05c`).

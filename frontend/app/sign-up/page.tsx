@@ -157,6 +157,7 @@ function SignUpContent() {
             <div>
               <label style={labelStyle}>Código de verificación</label>
               <input
+                data-testid="registration-code-input"
                 type="text"
                 inputMode="numeric"
                 value={code}
@@ -297,7 +298,7 @@ function SignUpContent() {
           </div>
 
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--gray-warm)', lineHeight: 1.5, cursor: 'pointer' }}>
-            <div onClick={() => setTermsAccepted(!termsAccepted)} style={{ width: 20, height: 20, borderRadius: 6, border: termsAccepted ? 'none' : '2px solid rgba(27,42,74,.15)', background: termsAccepted ? 'var(--coral)' : '#fff', display: 'grid', placeItems: 'center', flexShrink: 0, marginTop: 1, cursor: 'pointer', transition: 'all .2s' }}>
+            <div data-testid="signup-terms-toggle" onClick={() => setTermsAccepted(!termsAccepted)} style={{ width: 20, height: 20, borderRadius: 6, border: termsAccepted ? 'none' : '2px solid rgba(27,42,74,.15)', background: termsAccepted ? 'var(--coral)' : '#fff', display: 'grid', placeItems: 'center', flexShrink: 0, marginTop: 1, cursor: 'pointer', transition: 'all .2s' }}>
               {termsAccepted && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
             </div>
             <span>Acepto los <Link href="/terms" style={{ color: 'var(--coral)', fontWeight: 700 }}>Términos y Condiciones</Link> de MIMITTOS</span>

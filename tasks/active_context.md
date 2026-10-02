@@ -5,6 +5,22 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Acceso y limpieza de archivos — 2026-10-02
+
+Rama propia `fix/02102026-improvement-auth-media`, base `main`.
+La ronda aprobada corrige el emisor JWT que omite CAPTCHA, separa correo
+verificado de bloqueo administrativo y conserva referencias a archivos cuya
+eliminación falla. Las cuentas antiguas inactivas permanecen bloqueadas hasta
+activación explícita de staff; los códigos anteriores se invalidan porque
+no registraban su propósito. La migración se prepara y la aplica el deploy.
+
+QA combinada cubre backend, estado administrativo y flujos de registro/acceso,
+con bases y servicios de pruebas aislados. Evidencia de la ronda en el toolkit:
+`docs/audits/2026-10-02-mimittos_project-improvement-pass-project-improvement-20261002-auth-media.md`.
+La entrega requiere PR abierto con CI verde; sin merge ni deploy.
+Autorización de medios, tracking seguro, pagos y rendimiento quedan fuera del
+cupo. Para recuperar tracking en una futura ronda se eligió código por correo.
+
 ## Listados acotados y directorio de usuarios — 2026-10-01
 
 La ronda transversal amplía el PR #76 en la misma rama de sesión.
