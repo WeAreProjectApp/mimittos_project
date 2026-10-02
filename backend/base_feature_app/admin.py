@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 
 from django_attachments.admin import AttachmentsAdminMixin
 
+from .authentication import user_authentication_rule
 from .forms.blog import BlogForm
 from .forms.product import ProductForm
 from .forms.user import UserChangeForm, UserCreationForm
@@ -90,8 +91,8 @@ class BaseFeatureUserAdmin(UserAdmin):
     add_form = UserCreationForm
     form = UserChangeForm
     ordering = ('email',)
-    list_display = ('email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active')
-    list_filter = ('role', 'is_staff', 'is_active')
+    list_display = ('email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active', 'email_verified')
+    list_filter = ('role', 'is_staff', 'is_active', 'email_verified')
     search_fields = ('email', 'first_name', 'last_name')
     fieldsets = (
         (None, {'fields': ('email', 'password', 'impersonate_link')}),
@@ -99,7 +100,7 @@ class BaseFeatureUserAdmin(UserAdmin):
         (_('Role'), {'fields': ('role',)}),
         (
             _('Permissions'),
-            {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')},
+            {'fields': ('is_active', 'email_verified', 'is_staff', 'is_superuser', 'groups', 'user_permissions')},
         ),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
     )
@@ -113,7 +114,7 @@ class BaseFeatureUserAdmin(UserAdmin):
         ),
     )
 
-    readonly_fields = ('date_joined', 'impersonate_link')
+    readonly_fields = ('date_joined', 'email_verified', 'impersonate_link')
     filter_horizontal = ('groups', 'user_permissions')
 
     def impersonate_link(self, obj):
@@ -138,7 +139,7 @@ class BaseFeatureUserAdmin(UserAdmin):
         return custom_urls + urls
 
     def login_as_user_view(self, request, user_id):
-        if not (request.user.is_active and request.user.is_superuser):
+        if not (user_authentication_rule(request.user) and request.user.is_superuser):
             raise PermissionDenied('Only active superusers can use Login-as.')
 
         target = get_object_or_404(User, pk=user_id)
@@ -150,6 +151,10 @@ class BaseFeatureUserAdmin(UserAdmin):
 
         if not target.is_active:
             messages.error(request, _('Este usuario está inactivo.'))
+            return HttpResponseRedirect(change_url)
+
+        if not user_authentication_rule(target):
+            messages.error(request, _('Este usuario aún no ha verificado su correo.'))
             return HttpResponseRedirect(change_url)
 
         tokens = generate_auth_tokens(target)
@@ -164,9 +169,9 @@ class BaseFeatureUserAdmin(UserAdmin):
 
 
 class PasswordCodeAdmin(admin.ModelAdmin):
-    list_display = ('user', 'code', 'created_at', 'used')
+    list_display = ('user', 'code', 'purpose', 'created_at', 'used')
     search_fields = ('user__email', 'code')
-    list_filter = ('used', 'created_at')
+    list_filter = ('purpose', 'used', 'created_at')
     readonly_fields = ('created_at',)
     
     def has_add_permission(self, request):

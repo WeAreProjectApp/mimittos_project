@@ -2,15 +2,17 @@ import { test, expect } from '../test-with-coverage';
 import { waitForPageLoad } from '../fixtures';
 import {
   AUTH_REGISTRATION_VERIFY,
+  AUTH_SIGN_UP_FORM,
   AUTH_GOOGLE_LOGIN,
   AUTH_FORGOT_PASSWORD_SUBMIT,
   AUTH_RESEND_VERIFICATION_CODE,
   AUTH_FORGOT_PASSWORD_RESEND,
 } from '../helpers/flow-tags';
 
+// Bug caught: a UI refactor could leave customers unable to accept terms or enter their registration code.
 // quality: disable test_too_long (sign-up + email verification is a multi-step flow spanning two pages)
-test('should complete email verification after sign-up',
-  { tag: [...AUTH_REGISTRATION_VERIFY, '@outcome:success'] },
+test('verifying a registration code sends the customer to their orders',
+  { tag: [...AUTH_SIGN_UP_FORM, ...AUTH_REGISTRATION_VERIFY, '@outcome:success'] },
   async ({ page }) => {
     // Disable captcha so the form submits without a real token
     await page.route('**/api/google-captcha/site-key/', (route) =>
@@ -27,7 +29,18 @@ test('should complete email verification after sign-up',
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ access: 'fake-access', refresh: 'fake-refresh' }),
+        body: JSON.stringify({
+          access: 'fake-access',
+          refresh: 'fake-refresh',
+          user: { id: 11, email: 'nueva@ejemplo.com', first_name: 'María', last_name: 'Rodríguez', role: 'customer', is_staff: false },
+        }),
+      })
+    );
+    await page.route('**/api/validate_token/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ valid: true, user: { id: 11, email: 'nueva@ejemplo.com', first_name: 'María', last_name: 'Rodríguez', role: 'customer', is_staff: false } }),
       })
     );
 
@@ -44,23 +57,22 @@ test('should complete email verification after sign-up',
     await page.getByPlaceholder('Mínimo 8 caracteres').fill('Segura@123');
     await page.getByPlaceholder('Repite la contraseña').fill('Segura@123');
 
-    // quality: allow-fragile-selector (custom div toggle inside label has no ARIA role — first() targets the visual toggle element with no data-testid available)
-    await page.locator('label').filter({ hasText: /acepto los/i }).locator('div').first().click();
+    await page.getByTestId('signup-terms-toggle').click();
 
     // Submit Step 1
     await page.getByRole('button', { name: /crear mi cuenta/i }).click();
 
     // Step 2: verification code input should appear
-    await expect(page.getByPlaceholder('000000')).toBeVisible({ timeout: 10_000 });
+    const registrationCode = page.getByTestId('registration-code-input');
+    await expect(registrationCode).toBeVisible({ timeout: 10_000 });
 
     // Enter 6-digit verification code
-    await page.getByPlaceholder('000000').fill('123456');
+    await registrationCode.fill('123456');
 
     // Submit verification
     await page.getByRole('button', { name: /activar mi cuenta/i }).click();
 
-    // Should redirect away from sign-up after successful verification
-    await expect(page).not.toHaveURL(/.*sign-up/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/orders\/?$/, { timeout: 10_000 });
   }
 );
 
@@ -121,8 +133,9 @@ test('should reset password after submitting passcode and new password',
   }
 );
 
+// Bug caught: the pending account could be stranded in verification without a usable resend action.
 test(
-  'should resend verification code during sign-up step 2',
+  'resending a verification code resets the visible cooldown',
   { tag: [...AUTH_RESEND_VERIFICATION_CODE, '@outcome:success'] },
   async ({ page }) => {
     // Shorten 1-second countdown ticks to 5ms so the 60-step cooldown clears quickly
@@ -152,8 +165,7 @@ test(
     await page.getByPlaceholder('+57 300 000 0000').fill('+57 312 000 0001')
     await page.getByPlaceholder('Mínimo 8 caracteres').fill('Segura@123')
     await page.getByPlaceholder('Repite la contraseña').fill('Segura@123')
-    // quality: allow-fragile-selector (custom div toggle inside label has no ARIA role)
-    await page.locator('label').filter({ hasText: /acepto los/i }).locator('div').first().click()
+    await page.getByTestId('signup-terms-toggle').click()
     await page.getByRole('button', { name: /crear mi cuenta/i }).click()
 
     await expect(page.getByPlaceholder('000000')).toBeVisible({ timeout: 10_000 })
@@ -168,6 +180,7 @@ test(
     )
     await resendBtn.click()
     await resendRequest
+    await expect(page.getByText('Reenviar en 60s')).toHaveText('Reenviar en 60s')
   },
 )
 

@@ -40,8 +40,8 @@ def verified_user(db):
 
 @pytest.fixture
 def unverified_user(db):
-    """Inactive user — simulates an account pending email verification."""
-    return UserFactory(is_active=False)
+    """Active account that still requires email verification."""
+    return UserFactory(is_active=True, email_verified=False)
 
 
 @pytest.fixture

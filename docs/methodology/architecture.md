@@ -171,3 +171,22 @@ El dashboard administrativo conserva KPIs, filtros y exportación en su página.
 `DashboardCharts` concentra Recharts y sus transformaciones, y se importa dinámicamente
 con `ssr: false` cuando los datos de analytics están disponibles. El estado de carga
 sigue mostrando un mensaje mientras ese módulo se descarga.
+
+## Elegibilidad de cuentas y códigos — 2026-10-02
+
+El bloqueo administrativo (`is_active`) y la verificación de correo
+(`email_verified`) son independientes. Una cuenta sólo obtiene, renueva o usa
+una sesión si ambos valores son verdaderos; Django admin, impersonación y JWT
+aplican la misma regla. `POST /api/token/` conserva su contrato access/refresh
+y verifica el CAPTCHA configurado en la misma frontera que el inicio de sesión.
+
+El registro crea una cuenta activa con correo pendiente. Los códigos distinguen
+`registration` y `password_reset`; cada flujo acepta su propio propósito.
+Verificación y recuperación bloquean la cuenta y el código dentro de una
+transacción para impedir consumirlos dos veces. Recuperar contraseña modifica
+sólo la contraseña, y nunca levanta un bloqueo administrativo.
+
+La limpieza periódica de personalizaciones antiguas conserva la fila y la ruta
+cuando falla el borrado del almacenamiento, para reintentar en la siguiente
+ejecución. Registra cantidades de borrados y fallos sin nombres privados. La
+carrera entre limpieza y vinculación a un pedido queda como causa independiente.

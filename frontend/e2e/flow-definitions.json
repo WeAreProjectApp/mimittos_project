@@ -1,6 +1,6 @@
 {
-  "version": "1.5.4",
-  "lastUpdated": "2026-10-01",
+  "version": "1.5.5",
+  "lastUpdated": "2026-10-02",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -59,10 +59,10 @@
       "name": "Sign-in form display and interaction",
       "module": "auth",
       "roles": [
-        "shared"
+        "guest"
       ],
       "priority": "P2",
-      "description": "User navigates to sign-in page, sees form fields and can type in them",
+      "description": "El visitante completa correo y contraseña, puede recuperar su contraseña y resuelve CAPTCHA cuando está configurado.",
       "expectedSpecs": 1,
       "outcomes": [
         "display"
@@ -72,13 +72,14 @@
       "name": "Login with invalid credentials",
       "module": "auth",
       "roles": [
-        "shared"
+        "guest"
       ],
       "priority": "P1",
-      "description": "User submits invalid credentials and stays on sign-in page",
+      "description": "Credenciales incorrectas, CAPTCHA rechazado, bloqueo administrativo o correo pendiente impiden iniciar sesión; sólo el correo pendiente permite continuar a verificación.",
       "expectedSpecs": 1,
       "outcomes": [
-        "error"
+        "error",
+        "failure"
       ]
     },
     "auth-protected-redirect": {
@@ -425,10 +426,12 @@
         "guest"
       ],
       "priority": "P1",
-      "description": "User navigates to /sign-up and sees registration form with client-side validation",
+      "description": "El visitante acepta términos y CAPTCHA cuando corresponde; el registro crea una cuenta activa con correo pendiente y muestra la verificación sin emitir tokens.",
       "expectedSpecs": 1,
       "outcomes": [
+        "success",
         "error",
+        "failure",
         "display"
       ]
     },
@@ -568,7 +571,7 @@
         "guest"
       ],
       "priority": "P1",
-      "description": "User submits valid credentials, receives JWT tokens and user data, then a customer is redirected to /orders while staff is redirected to /backoffice",
+      "description": "Una cuenta activa y con correo verificado inicia sesión tras el CAPTCHA configurado y llega a sus pedidos o al backoffice según su rol.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -621,11 +624,12 @@
         "guest"
       ],
       "priority": "P2",
-      "description": "After sign-up, user enters verification code sent to email and account is activated",
+      "description": "Un código de registro válido y de un solo uso verifica el correo de una cuenta activa; conserva su estado administrativo y abre la sesión hacia pedidos.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
-        "error"
+        "error",
+        "failure"
       ]
     },
     "app-dashboard-access": {
@@ -786,7 +790,7 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff on /backoffice/usuarios views user list and updates role/staff/active via userAdminService",
+      "description": "El staff entra a Usuarios desde el menú y distingue Inactivo (bloqueado), Correo pendiente (activo sin verificar) y Activo (activo y verificado).",
       "expectedSpecs": 1,
       "outcomes": [
         "display"
@@ -970,10 +974,11 @@
         "guest"
       ],
       "priority": "P3",
-      "description": "During /sign-up step 2 the user clicks 'Reenviar código' after the cooldown; POST /api/resend_verification/ sends a new 6-digit code and the cooldown timer restarts",
+      "description": "Una cuenta activa con correo pendiente puede reenviar su código de registro; la interfaz aplica el contador de 60 segundos.",
       "expectedSpecs": 1,
       "outcomes": [
-        "success"
+        "success",
+        "failure"
       ]
     },
     "auth-forgot-password-resend": {
@@ -1199,7 +1204,7 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff clicks 'Activar' or 'Desactivar' on a user row in /backoffice/usuarios; PATCH /api/users/{id}/ flips is_active and the badge updates",
+      "description": "El staff cambia únicamente is_active; la verificación de correo se muestra como dato de sólo lectura y se conserva al actualizar el estado.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",

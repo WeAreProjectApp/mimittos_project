@@ -56,7 +56,7 @@ export default function UsuariosAdminPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--cream-warm)', borderBottom: '1px dashed rgba(212,132,138,.2)' }}>
-                {['Email', 'Nombre', 'Rol', 'Activo', 'Fecha registro', 'Acciones'].map((h) => (
+                {['Email', 'Nombre', 'Rol', 'Estado', 'Fecha registro', 'Acciones'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
@@ -72,8 +72,8 @@ export default function UsuariosAdminPage() {
                     </span>
                   </td>
                   <td style={tdStyle}>
-                    <span style={{ color: u.is_active ? '#2E7D32' : '#C62828', fontWeight: 600 }}>
-                      {u.is_active ? 'Activo' : 'Inactivo'}
+                    <span style={{ color: !u.is_active ? '#C62828' : u.email_verified ? '#2E7D32' : '#E65100', fontWeight: 600 }}>
+                      {!u.is_active ? 'Inactivo' : u.email_verified ? 'Activo' : 'Correo pendiente'}
                     </span>
                   </td>
                   <td style={{ ...tdStyle, color: 'var(--gray-warm)', whiteSpace: 'nowrap' }}>

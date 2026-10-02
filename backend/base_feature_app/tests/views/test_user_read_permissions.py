@@ -143,15 +143,15 @@ def test_staff_user_list_returns_descending_concrete_users(api_client):
     assert response.json() == [
         {
             'id': newer.id, 'email': 'newer@example.com', 'first_name': 'Newer',
-            'last_name': 'Admin', 'role': 'admin', 'is_active': True, 'is_staff': True,
+            'last_name': 'Admin', 'role': 'admin', 'is_active': True, 'email_verified': True, 'is_staff': True,
         },
         {
             'id': older.id, 'email': 'older@example.com', 'first_name': 'Older',
-            'last_name': 'Customer', 'role': 'customer', 'is_active': False, 'is_staff': False,
+            'last_name': 'Customer', 'role': 'customer', 'is_active': False, 'email_verified': True, 'is_staff': False,
         },
         {
             'id': staff.id, 'email': 'staff-list@example.com', 'first_name': 'Staff',
-            'last_name': 'Reader', 'role': 'admin', 'is_active': True, 'is_staff': True,
+            'last_name': 'Reader', 'role': 'admin', 'is_active': True, 'email_verified': True, 'is_staff': True,
         },
     ]
 
@@ -173,7 +173,7 @@ def test_staff_user_detail_returns_concrete_account_fields(api_client):
     assert response.json() == {
         'id': target.id, 'email': 'detail-target@example.com', 'first_name': 'Detail',
         'last_name': 'Target', 'phone': '3005550101', 'role': 'admin',
-        'is_active': False, 'is_staff': True, 'date_joined': '2026-01-20T15:30:00Z',
+        'is_active': False, 'email_verified': True, 'is_staff': True, 'date_joined': '2026-01-20T15:30:00Z',
     }
 
 

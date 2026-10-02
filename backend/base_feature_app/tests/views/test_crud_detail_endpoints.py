@@ -331,6 +331,42 @@ def test_user_detail_update_invalid(api_client, staff_user):
 
 
 @pytest.mark.django_db
+def test_user_detail_ignores_email_verification_patch(api_client, staff_user):
+    """Falla si personal administrativo puede verificar correos mediante PATCH."""
+    User = get_user_model()
+    target = User.objects.create_user(
+        email='pending-verification@example.com', password='pass1234', email_verified=False,
+    )
+    api_client.force_authenticate(user=staff_user)
+
+    response = api_client.patch(
+        reverse('user-detail', kwargs={'user_id': target.id}),
+        {'email_verified': True},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()['email_verified'] is False
+    target.refresh_from_db()
+    assert target.email_verified is False
+
+
+@pytest.mark.django_db
+def test_staff_user_list_includes_email_verification_state(api_client, staff_user):
+    """Falla si la lista administrativa omite el estado de verificación del correo."""
+    User = get_user_model()
+    target = User.objects.create_user(
+        email='verification-state@example.com', password='pass1234', email_verified=False,
+    )
+    api_client.force_authenticate(user=staff_user)
+
+    response = api_client.get(reverse('user-list'))
+
+    assert response.status_code == status.HTTP_200_OK
+    assert next(user for user in response.json() if user['id'] == target.id)['email_verified'] is False
+
+
+@pytest.mark.django_db
 def test_sale_list_and_detail(api_client, staff_user):
     sale = _create_sale()
     api_client.force_authenticate(user=staff_user)

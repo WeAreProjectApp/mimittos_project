@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.4
-**Last Updated:** 2026-10-01
+**Version:** 1.5.5
+**Last Updated:** 2026-10-02
 
 ---
 
@@ -108,102 +108,45 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 ### auth-sign-in
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-in` |
-| **API endpoints** | `POST /api/sign_in/` |
+| Campo | Valor |
+|---|---|
+| Prioridad | P1 |
+| Roles | guest |
+| Ruta | `/sign-in` |
+| API | `POST /api/sign_in/` |
 
-**Preconditions:** User is not authenticated. A registered account exists.
+La cuenta debe estar activa y tener el correo verificado. El visitante completa correo, contraseña y CAPTCHA cuando está configurado. El éxito guarda la sesión y abre `/orders` o `/backoffice` según el rol.
 
-**Steps:**
-
-1. User navigates to `/sign-in`.
-2. Page renders form with **Email**, **Password** fields and **Sign in** button.
-3. User fills in email and password.
-4. User clicks **Sign in**.
-5. Frontend sends `POST /api/sign_in/` with `{ email, password }`.
-6. Backend validates credentials and returns `{ access, refresh }` (HTTP 200).
-7. Frontend stores tokens in cookies (`access_token`, `refresh_token`).
-8. Frontend redirects to `/dashboard`.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| Empty email or password | HTML `required` prevents submission |
-| Email not registered | `401 { error: "Invalid credentials" }` — error below form |
-| Wrong password | `401 { error: "Invalid credentials" }` — error below form |
-| Account inactive | `403 { error: "Account is inactive" }` — error below form |
+| Condición | Resultado |
+|---|---|
+| Credenciales incorrectas | 401; mensaje en el formulario |
+| CAPTCHA ausente o rechazado | 400; no abre sesión |
+| Cuenta bloqueada | 403; contactar al equipo, sin ofrecer verificación |
+| Correo pendiente en cuenta activa | 403 con `needs_verification`; permite continuar a verificar |
 
 ---
 
 ### auth-sign-up
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-up` |
-| **API endpoints** | `POST /api/sign_up/` |
+| Campo | Valor |
+|---|---|
+| Prioridad | P1 |
+| Roles | guest |
+| Ruta | `/sign-up` |
+| API | `POST /api/sign_up/` |
 
-**Preconditions:** User is not authenticated.
+1. El visitante completa nombre, apellido, correo y contraseña, acepta los términos y resuelve CAPTCHA cuando corresponde.
+2. El formulario valida confirmación y longitud de la contraseña antes de enviar.
+3. El servidor crea una cuenta con `is_active=True` y `email_verified=False`, y un código con propósito `registration`.
+4. La interfaz muestra la verificación; el registro todavía no entrega tokens ni abre una sesión.
 
-**Steps:**
-
-1. User navigates to `/sign-up`.
-2. Page renders form: **First Name**, **Last Name**, **Email**, **Password**, **Confirm Password**, **Create account** button.
-3. User fills in all fields.
-4. User clicks **Create account**.
-5. Frontend validates passwords match and length >= 8.
-6. Frontend sends `POST /api/sign_up/` with `{ email, password, first_name, last_name }`.
-7. Backend creates user and returns `{ access, refresh }` (HTTP 201).
-8. Frontend stores tokens and redirects to `/dashboard`.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| Passwords do not match | Client error: "Passwords do not match" — no API call |
-| Password < 8 chars | Client error: "Password must be at least 8 characters" — no API call |
-| Email already registered | `400 { error: "User with this email already exists" }` |
-| Missing email or password | `400 { error: "Email and password are required" }` |
+La cuenta ya verificada o bloqueada rechaza un nuevo registro. Una cuenta activa con correo pendiente puede recibir otro código de registro. Los errores de validación o CAPTCHA se muestran en el formulario.
 
 ---
 
 ### auth-google-login
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P2 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-in`, `/sign-up` |
-| **API endpoints** | `POST /api/google_login/` |
-
-**Preconditions:** `NEXT_PUBLIC_GOOGLE_CLIENT_ID` env var is set. User is not authenticated.
-
-**Steps:**
-
-1. User navigates to `/sign-in` or `/sign-up`.
-2. Google Sign-In button rendered via `@react-oauth/google`.
-3. User clicks Google button and completes OAuth consent.
-4. Frontend receives credential JWT, decodes `email`, `given_name`, `family_name`, `picture`.
-5. Frontend sends `POST /api/google_login/` with `{ credential, email, given_name, family_name, picture }`.
-6. Backend validates token via Google tokeninfo, gets or creates user.
-7. Backend returns `{ access, refresh, created, google_validated }` (HTTP 200).
-8. Frontend stores tokens and redirects to `/dashboard`.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` missing | "Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID" shown instead of button |
-| Credential missing | `400 { error: "Google credential is required" }` |
-| Invalid credential (prod) | `401 { error: "Invalid Google credential" }` |
-| Audience mismatch (prod) | `401 { error: "Invalid Google client" }` |
-| New user | User created with unusable password; `created: true` |
-| Existing user | Matched by email; names updated if blank |
+El registro declara este flujo como exento (`expectedSpecs=0`). La interfaz actual no inicia una autenticación Google funcional. Esta ronda no incorpora un proveedor OAuth ni cuenta su superficie visual como autenticación probada.
 
 ---
 
@@ -251,58 +194,21 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 ### auth-login-success
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-in` |
-| **API endpoints** | `POST /api/sign_in/` |
+**Roles:** guest. **Ruta:** `/sign-in`. **API:** `POST /api/sign_in/`.
 
-**Preconditions:** User is not authenticated. A registered, active account exists.
-
-**Steps:**
-
-1. User navigates to `/sign-in`.
-2. User fills in valid email and password.
-3. User clicks **Sign in**.
-4. Frontend sends `POST /api/sign_in/` → backend returns `{ access, refresh }` (HTTP 200).
-5. Frontend stores tokens and user data, then redirects according to role.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| Customer account | Redirects to `/orders` |
-| Staff account | Redirects to `/backoffice` |
+Una cuenta activa y con correo verificado completa credenciales y CAPTCHA configurado. El navegador guarda los tokens, restaura al usuario y llega a pedidos o backoffice según el rol. Una cuenta bloqueada o con correo pendiente no cumple esta precondición.
 
 ---
 
 ### auth-registration-verify
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P2 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-up` |
-| **API endpoints** | `POST /api/sign_up/`, `POST /api/verify_registration/`, `POST /api/resend_verification/` |
+**Roles:** guest. **Ruta:** `/sign-up` en el paso de verificación. **API:** `POST /api/verify_registration/`.
 
-**Preconditions:** User has just completed sign-up form.
+1. El visitante introduce el código de registro recibido por correo.
+2. El servidor comprueba cuenta activa, correo pendiente, propósito `registration`, caducidad y uso previo bajo bloqueo transaccional.
+3. El éxito marca sólo el correo como verificado, consume el código, abre la sesión y muestra los pedidos.
 
-**Steps:**
-
-1. After successful `POST /api/sign_up/`, UI transitions to a verification code input.
-2. Backend sends 6-digit code to user's email.
-3. User enters code and clicks **Verify**.
-4. Frontend sends `POST /api/verify_registration/` with `{ email, code }`.
-5. Backend activates account and returns `{ access, refresh }`.
-6. Frontend stores tokens and redirects to `/dashboard`.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| Wrong code | `400 { error: "Invalid or expired code" }` |
-| User clicks resend | `POST /api/resend_verification/` sends new code |
+Un código incorrecto, vencido, utilizado o de recuperación de contraseña rechaza la operación sin abrir sesión. Una cuenta bloqueada no se reactiva. Dos solicitudes simultáneas sólo pueden consumir el código una vez.
 
 ---
 
@@ -1131,18 +1037,17 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 ### backoffice-user-management
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P3 |
-| **Roles** | staff |
-| **Frontend route** | `/backoffice/usuarios` |
-| **API endpoints** | `GET /api/users/`, `PATCH /api/users/{id}/` |
+**Roles:** staff. **Ruta:** `/backoffice/usuarios`. **API:** `GET /api/users/`.
 
-**Steps:**
+El staff abre Usuarios desde el menú del backoffice y ve una fila por usuario. La columna Estado distingue:
 
-1. Staff navigates to `/backoffice/usuarios`.
-2. Frontend fetches `GET /api/users/` and renders users table: email, role, is_staff, is_active.
-3. Staff updates a user's role, is_staff, or is_active via inline controls → `PATCH /api/users/{id}/`.
+| Estado de la cuenta | Texto |
+|---|---|
+| `is_active=False` | Inactivo |
+| Activa, `email_verified=False` | Correo pendiente |
+| Activa, `email_verified=True` | Activo |
+
+El bloqueo administrativo tiene precedencia sobre la verificación. La verificación es un dato de sólo lectura.
 
 ---
 
@@ -1339,14 +1244,11 @@ Authenticated user types into the "Buscar por # pedido…" input on `/orders`. T
 
 ### auth-resend-verification-code
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P3 |
-| **Roles** | guest |
-| **Frontend route** | `/sign-up` |
-| **API endpoints** | `POST /api/resend_verification/` |
+**Roles:** guest con una cuenta activa y correo pendiente. **API:** `POST /api/resend_verification/`.
 
-During step 2 of `/sign-up` (post-registration verification), the user clicks "Reenviar código" once the 60-second cooldown expires. Frontend sends `POST /api/resend_verification/` with `{ email }`; backend issues a new 6-digit code and emails it. The cooldown timer resets and the previous code is invalidated.
+El botón accesible «Reenviar código» vuelve a estar disponible tras el contador inicial de 60 segundos. El éxito solicita otro código con propósito `registration` y reinicia el contador. Una cuenta bloqueada o ya verificada no recibe un código de registro. Un fallo no abre sesión ni verifica la cuenta.
+
+---
 
 ### auth-forgot-password-resend
 
@@ -1522,14 +1424,11 @@ Staff clicks **Hacer admin** (or **Hacer cliente** if the user is already admin)
 
 ### backoffice-user-toggle-active
 
-| Field | Value |
-|-------|-------|
-| **Roles** | staff |
-| **Priority** | P3 |
-| **Frontend route** | `/backoffice/usuarios` |
-| **API endpoints** | `PATCH /api/users/<id>/` |
+**Roles:** staff. **Ruta:** `/backoffice/usuarios`. **API:** `PATCH /api/users/<id>/`.
 
-Staff clicks **Activar** or **Desactivar** on a user row. `userAdminService.update({ is_active })` flips the flag. The badge color updates and the button label inverts.
+El staff pulsa Activar o Desactivar en la fila del usuario. El cuerpo cambia únicamente `is_active`; el servidor conserva `email_verified` y responde con ambos datos. El texto Estado se actualiza según los tres estados documentados. Un error de la API se muestra sin presentar el cambio como completado.
+
+---
 
 ### backoffice-order-status-update
 

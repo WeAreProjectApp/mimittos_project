@@ -22,6 +22,7 @@ const mockUsers = [
     role: 'customer',
     is_staff: false,
     is_active: true,
+    email_verified: true,
     date_joined: '2026-01-15T10:00:00Z',
   },
 ]
@@ -61,7 +62,7 @@ test(
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ ...mockUsers[0], role: 'admin', is_staff: true }),
+          body: JSON.stringify({ ...mockUsers[0], role: 'admin', is_staff: true, email_verified: true }),
         })
       } else {
         route.continue()
@@ -84,8 +85,9 @@ test(
 )
 
 test(
-  'should send PATCH when staff deactivates a user account',
-  { tag: [...BACKOFFICE_USER_TOGGLE_ACTIVE] },
+  // Bug caught: staff navigation could bypass the changed page, or deactivation could overwrite verification state.
+  'staff navigation deactivates an email-verified user without changing verification',
+  { tag: [...BACKOFFICE_USER_TOGGLE_ACTIVE, '@outcome:success'] },
   async ({ page }) => {
     await setupStaffAuth(page)
 
@@ -105,23 +107,26 @@ test(
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ ...mockUsers[0], is_active: false }),
+          body: JSON.stringify({ ...mockUsers[0], is_active: false, email_verified: true }),
         })
       } else {
         route.continue()
       }
     })
 
-    await page.goto('/backoffice/usuarios')
+    await page.goto('/backoffice')
     await waitForPageLoad(page)
 
-    await expect(page.locator('body')).toBeVisible()
+    await page.getByRole('navigation').getByRole('link', { name: 'Usuarios' }).click()
+    await expect(page).toHaveURL(/\/backoffice\/usuarios/)
 
-    const row = page.locator('tr').filter({ hasText: 'cliente@example.com' })
+    const row = page.getByRole('row', { name: /cliente@example\.com/i })
+    await expect(row).toContainText('Activo')
     await row.getByRole('button', { name: /Desactivar/i }).click()
 
     const sent = await activeRequest
     const body = sent.postDataJSON() as Record<string, unknown>
-    expect(body.is_active).toBe(false)
+    expect(body).toEqual({ is_active: false })
+    await expect(row).toContainText('Inactivo')
   },
 )

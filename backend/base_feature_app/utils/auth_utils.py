@@ -2,13 +2,17 @@
 Authentication utility functions.
 """
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.exceptions import AuthenticationFailed
 from django.core.mail import send_mail
 from django.conf import settings
 
 from base_feature_app.utils.email_renderer import render_email_html
+from base_feature_app.authentication import user_authentication_rule
 
 
 def generate_auth_tokens(user):
+    if not user_authentication_rule(user):
+        raise AuthenticationFailed('Esta cuenta no puede iniciar sesión.')
     refresh = RefreshToken.for_user(user)
     return {
         'refresh': str(refresh),
