@@ -1,3 +1,5 @@
+"""Verify CRUD list and detail API behavior for backoffice resources."""
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -9,6 +11,7 @@ from base_feature_app.models import Blog, Product, Sale, SoldProduct
 
 @pytest.fixture
 def staff_user(db):
+    """Create a staff user authorized to mutate backoffice resources."""
     User = get_user_model()
     user = User.objects.create_user(email='staff2@example.com', password='pass1234')
     user.is_staff = True
@@ -43,6 +46,7 @@ def _create_sale():
 
 @pytest.mark.django_db
 def test_blog_crud_list(api_client):
+    """Verify the blog list returns stored entries."""
     _create_blog()
 
     response = api_client.get(reverse('blogs'))
@@ -53,6 +57,7 @@ def test_blog_crud_list(api_client):
 
 @pytest.mark.django_db
 def test_blog_crud_create_success(api_client, staff_user):
+    """Verify staff can create a blog with valid data."""
     library = Library.objects.create(title='Blog Library')
     api_client.force_authenticate(user=staff_user)
 
@@ -68,6 +73,7 @@ def test_blog_crud_create_success(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_blog_crud_create_invalid(api_client, staff_user):
+    """Verify blog creation rejects an empty payload."""
     api_client.force_authenticate(user=staff_user)
 
     response = api_client.post(reverse('blogs'), {}, format='json')
@@ -77,6 +83,7 @@ def test_blog_crud_create_invalid(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_blog_detail_get_success(api_client):
+    """Verify blog detail returns the requested entry."""
     blog = _create_blog()
 
     response = api_client.get(reverse('blog-detail', kwargs={'blog_id': blog.id}))
@@ -87,6 +94,7 @@ def test_blog_detail_get_success(api_client):
 
 @pytest.mark.django_db
 def test_blog_detail_not_found(api_client):
+    """Verify blog detail returns not found for an unknown identifier."""
     response = api_client.get(reverse('blog-detail', kwargs={'blog_id': 999}))
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -94,6 +102,7 @@ def test_blog_detail_not_found(api_client):
 
 @pytest.mark.django_db
 def test_blog_detail_update_requires_staff(api_client):
+    """Verify blog updates reject requests without staff privileges."""
     blog = _create_blog()
 
     response = api_client.patch(
@@ -107,6 +116,7 @@ def test_blog_detail_update_requires_staff(api_client):
 
 @pytest.mark.django_db
 def test_blog_detail_update_success(api_client, staff_user):
+    """Verify staff can update a blog with valid data."""
     blog = _create_blog()
     api_client.force_authenticate(user=staff_user)
 
@@ -123,6 +133,7 @@ def test_blog_detail_update_success(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_blog_detail_update_invalid(api_client, staff_user):
+    """Verify blog updates reject an empty title."""
     blog = _create_blog()
     api_client.force_authenticate(user=staff_user)
 
@@ -137,6 +148,7 @@ def test_blog_detail_update_invalid(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_blog_detail_delete(api_client, staff_user):
+    """Verify staff can delete a blog."""
     blog = _create_blog()
     api_client.force_authenticate(user=staff_user)
 
@@ -148,6 +160,7 @@ def test_blog_detail_delete(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_product_crud_list(api_client):
+    """Verify the product list returns stored entries."""
     _create_product()
 
     response = api_client.get(reverse('products'))
@@ -181,6 +194,7 @@ def test_product_crud_create_success(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_product_crud_create_invalid(api_client, staff_user):
+    """Verify product creation rejects an empty payload."""
     api_client.force_authenticate(user=staff_user)
 
     response = api_client.post(reverse('products'), {}, format='json')
@@ -190,6 +204,7 @@ def test_product_crud_create_invalid(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_product_detail_get_success(api_client):
+    """Verify product detail returns the requested entry."""
     product = _create_product()
 
     response = api_client.get(reverse('product-detail', kwargs={'product_id': product.id}))
@@ -200,6 +215,7 @@ def test_product_detail_get_success(api_client):
 
 @pytest.mark.django_db
 def test_product_detail_not_found(api_client):
+    """Verify product detail returns not found for an unknown identifier."""
     response = api_client.get(reverse('product-detail', kwargs={'product_id': 999}))
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -207,6 +223,7 @@ def test_product_detail_not_found(api_client):
 
 @pytest.mark.django_db
 def test_product_detail_update_requires_staff(api_client):
+    """Verify product updates reject requests without staff privileges."""
     product = _create_product()
 
     response = api_client.patch(
@@ -220,6 +237,7 @@ def test_product_detail_update_requires_staff(api_client):
 
 @pytest.mark.django_db
 def test_product_detail_update_success(api_client, staff_user):
+    """Verify staff can update a product with valid data."""
     product = _create_product()
     api_client.force_authenticate(user=staff_user)
 
@@ -236,6 +254,7 @@ def test_product_detail_update_success(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_product_detail_update_invalid(api_client, staff_user):
+    """Verify product updates reject an empty title."""
     product = _create_product()
     api_client.force_authenticate(user=staff_user)
 
@@ -250,6 +269,7 @@ def test_product_detail_update_invalid(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_product_detail_delete(api_client, staff_user):
+    """Verify staff can delete a product."""
     product = _create_product()
     api_client.force_authenticate(user=staff_user)
 
@@ -278,6 +298,7 @@ def test_user_crud_list_and_create(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_user_crud_create_invalid(api_client, staff_user):
+    """Verify user creation rejects an empty payload."""
     api_client.force_authenticate(user=staff_user)
 
     response = api_client.post(reverse('user-list'), {}, format='json')
@@ -308,6 +329,7 @@ def test_user_detail_get_update_delete(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_user_detail_not_found(api_client, staff_user):
+    """Verify user detail returns not found for an unknown identifier."""
     api_client.force_authenticate(user=staff_user)
 
     response = api_client.get(reverse('user-detail', kwargs={'user_id': 999}))
@@ -317,6 +339,7 @@ def test_user_detail_not_found(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_user_detail_update_invalid(api_client, staff_user):
+    """Verify a full user update rejects an empty payload."""
     User = get_user_model()
     target = User.objects.create_user(email='invalid@example.com', password='pass1234')
     api_client.force_authenticate(user=staff_user)
@@ -368,6 +391,7 @@ def test_staff_user_list_includes_email_verification_state(api_client, staff_use
 
 @pytest.mark.django_db
 def test_sale_list_and_detail(api_client, staff_user):
+    """Verify staff can retrieve the sale list and a sale detail."""
     sale = _create_sale()
     api_client.force_authenticate(user=staff_user)
 
@@ -380,6 +404,7 @@ def test_sale_list_and_detail(api_client, staff_user):
 
 @pytest.mark.django_db
 def test_sale_detail_not_found(api_client, staff_user):
+    """Verify sale detail returns not found for an unknown identifier."""
     api_client.force_authenticate(user=staff_user)
 
     response = api_client.get(reverse('sale-detail', kwargs={'sale_id': 999}))

@@ -1,10 +1,9 @@
 """Tests for Silk-related Huey tasks: silk_garbage_collection, weekly_slow_queries_report."""
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
-
 import logging
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import override_settings

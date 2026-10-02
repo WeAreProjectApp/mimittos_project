@@ -1,3 +1,5 @@
+"""Verify Django admin permissions, deletion, and impersonation behavior."""
+
 import pytest
 from django.contrib.auth import authenticate
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -26,6 +28,7 @@ def _request_with_messages(user):
 
 @pytest.mark.django_db
 def test_password_code_admin_disables_add_permission():
+    """Verify password codes cannot be added through the admin."""
     admin = PasswordCodeAdmin(PasswordCode, admin_site)
     request = RequestFactory().get('/admin/')
 
@@ -34,6 +37,7 @@ def test_password_code_admin_disables_add_permission():
 
 @pytest.mark.django_db
 def test_blog_admin_delete_queryset_removes_objects():
+    """Verify bulk blog deletion removes the selected records."""
     library = Library.objects.create(title='Blog Library')
     blog = Blog.objects.create(
         title='Test Blog',
@@ -116,6 +120,7 @@ def test_admin_site_custom_sections():
 
 @pytest.mark.django_db
 def test_user_admin_impersonate_link_renders_admin_url():
+    """Verify the impersonation link targets the selected user's admin action."""
     user = User.objects.create_user(email='target@example.com', password='pass1234')
     admin = BaseFeatureUserAdmin(User, admin_site)
 
@@ -147,6 +152,7 @@ def test_user_admin_login_as_redirects_to_frontend():
 
 @pytest.mark.django_db
 def test_user_admin_login_as_requires_active_superuser():
+    """Verify impersonation requires an active superuser actor."""
     factory = RequestFactory()
     regular_user = User.objects.create_user(email='user@example.com', password='pass1234')
     target_user = User.objects.create_user(email='target@example.com', password='pass1234')
@@ -226,6 +232,7 @@ def test_user_admin_login_as_rejects_unverified_target():
     ),
 ])
 def test_user_admin_login_as_blocks_ineligible_target(build_target):
+    """Verify impersonation blocks targets that are not eligible."""
     admin_user = User.objects.create_superuser(email='admin@example.com', password='pass1234')
     target_user = build_target()
     request = _request_with_messages(admin_user)

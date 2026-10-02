@@ -1,3 +1,5 @@
+"""Verify JWT issuance, CAPTCHA enforcement, and eligibility checks."""
+
 from unittest.mock import Mock, patch
 
 import pytest
@@ -5,14 +7,15 @@ import requests
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from base_feature_app.views.captcha_views import RECAPTCHA_VERIFY_URL
 
 
 @pytest.mark.django_db
 def test_token_obtain_pair_with_email_success(api_client):
+    """Verify eligible email credentials produce both JWT tokens."""
     User = get_user_model()
     User.objects.create_user(email='token@example.com', password='pass1234')
 
@@ -68,7 +71,8 @@ def test_token_obtain_pair_rejects_untrusted_captcha(mock_post, api_client, prov
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert 'captcha_token' in response.json()
-    assert 'access' not in response.json() and 'refresh' not in response.json()
+    assert 'access' not in response.json()
+    assert 'refresh' not in response.json()
     mock_post.assert_called_once()
 
 
@@ -88,7 +92,8 @@ def test_token_obtain_pair_rejects_missing_captcha_without_provider_call(mock_po
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert 'captcha_token' in response.json()
-    assert 'access' not in response.json() and 'refresh' not in response.json()
+    assert 'access' not in response.json()
+    assert 'refresh' not in response.json()
     mock_post.assert_not_called()
 
 
@@ -109,7 +114,8 @@ def test_token_obtain_pair_rejects_ineligible_account(api_client, state):
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert 'access' not in response.json() and 'refresh' not in response.json()
+    assert 'access' not in response.json()
+    assert 'refresh' not in response.json()
 
 
 @pytest.mark.django_db

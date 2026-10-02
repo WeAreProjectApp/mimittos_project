@@ -1,4 +1,5 @@
 import { test, expect } from '../test-with-coverage';
+import type { Page } from '@playwright/test';
 import { waitForPageLoad } from '../fixtures';
 import {
   AUTH_REGISTRATION_VERIFY,
@@ -8,6 +9,15 @@ import {
   AUTH_RESEND_VERIFICATION_CODE,
   AUTH_FORGOT_PASSWORD_RESEND,
 } from '../helpers/flow-tags';
+
+async function clearResendCooldown(page: Page) {
+  for (let remaining = 60; remaining > 1; remaining -= 1) {
+    await expect(page.getByText(`Reenviar en ${remaining}s`)).toHaveText(`Reenviar en ${remaining}s`)
+    await page.clock.runFor(1000)
+  }
+  await expect(page.getByText('Reenviar en 1s')).toHaveText('Reenviar en 1s')
+  await page.clock.runFor(1000)
+}
 
 // Bug caught: a UI refactor could leave customers unable to accept terms or enter their registration code.
 // quality: disable test_too_long (sign-up + email verification is a multi-step flow spanning two pages)
@@ -138,13 +148,7 @@ test(
   'resending a verification code resets the visible cooldown',
   { tag: [...AUTH_RESEND_VERIFICATION_CODE, '@outcome:success'] },
   async ({ page }) => {
-    // Shorten 1-second countdown ticks to 5ms so the 60-step cooldown clears quickly
-    await page.addInitScript(() => {
-      const orig = window.setTimeout
-      ;(window as unknown as { setTimeout: (fn: TimerHandler, ms?: number, ...args: unknown[]) => number }).setTimeout =
-        (fn: TimerHandler, ms?: number, ...args: unknown[]) =>
-          orig(fn, ms === 1000 ? 5 : ms, ...args)
-    })
+    await page.clock.install({ time: new Date('2026-10-02T00:00:00Z') })
 
     await page.route('**/api/google-captcha/site-key/', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ site_key: null }) })
@@ -158,6 +162,7 @@ test(
 
     await page.goto('/sign-up')
     await waitForPageLoad(page)
+    await page.clock.pauseAt(new Date('2026-10-02T01:00:00Z'))
 
     await page.getByPlaceholder('Sofía').fill('María')
     await page.getByPlaceholder('Martínez').fill('Rodríguez')
@@ -170,7 +175,7 @@ test(
 
     await expect(page.getByPlaceholder('000000')).toBeVisible({ timeout: 10_000 })
 
-    // Wait for the cooldown to clear (60 ticks × 5ms ≈ 300ms, large timeout for CI headroom)
+    await clearResendCooldown(page)
     const resendBtn = page.getByRole('button', { name: /Reenviar código/i })
     await expect(resendBtn).toBeVisible({ timeout: 10_000 })
 
