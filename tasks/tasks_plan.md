@@ -5,6 +5,18 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Privacidad de pedidos e imágenes — 2026-10-02
+
+- [x] Autorizar archivos de personalización por dueño real o capacidad firmada (`I-S-fcb336acb752`).
+- [x] Proteger pedidos/pagos y recuperar acceso por correo con vigencia de treinta días (`I-S-a6d59f7cee05`).
+- [x] Conservar hero vigente hasta confirmar reemplazo (`I-O-b317b11765b0`).
+- Validación conjunta: permisos, efectos antes de autorización, consumo/límites,
+  concurrencia MySQL, fallos de storage/DB, recuperación del carrito y cinco anchos.
+- Entrega de esta sesión: PR propio abierto hacia `main`, CI del último commit
+  en verde y evidencia tipada de la ronda en el toolkit. Sin merge ni deploy.
+- Pendientes fuera del cupo: transiciones/polling de pagos, carrera de limpieza
+  de archivos, lecturas PATCH, persistencia de categorías y navegación responsive.
+
 ## Ronda transversal — 2026-10-01
 
 - [x] Restringir lecturas del directorio de usuarios a staff (`I-S-1421690fa05c`).

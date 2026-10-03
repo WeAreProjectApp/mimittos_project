@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { analyticsService } from '@/lib/services/analyticsService'
+import { consumeOrderAccessFragment } from '@/lib/utils/orderAccess'
 
 function getOrCreateSessionId(): string {
   const key = 'mmts_sid'
@@ -41,18 +42,23 @@ export function usePageView(peluchSlug?: string) {
   const pathname = usePathname()
 
   useEffect(() => {
+    consumeOrderAccessFragment()
     // Don't track admin or auth pages
     if (pathname.startsWith('/backoffice') || pathname.startsWith('/sign-')) return
 
-    const session_id = getOrCreateSessionId()
-    analyticsService.recordPageView({
-      url_path: pathname,
-      session_id,
-      peluch_slug: peluchSlug,
-      is_new_visitor: isNewVisitor(),
-      device_type: detectDevice(),
-      traffic_source: detectTrafficSource(),
-    })
+    try {
+      const session_id = getOrCreateSessionId()
+      analyticsService.recordPageView({
+        url_path: pathname,
+        session_id,
+        peluch_slug: peluchSlug,
+        is_new_visitor: isNewVisitor(),
+        device_type: detectDevice(),
+        traffic_source: detectTrafficSource(),
+      })
+    } catch {
+      // Restricted storage must not prevent access to the order itself.
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 }

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { orderService } from '@/lib/services/orderService'
+import { storeOrderAccess } from '@/lib/utils/orderAccess'
 import {
   calcAmountToPayNow, calcBalanceAtDelivery, calcDeposit, calcFullPaymentDiscount,
   calcShipping, lineTotal, useCartStore,
@@ -55,6 +56,7 @@ export default function CheckoutPage() {
   const [hydrated, setHydrated] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [itemErrors, setItemErrors] = useState<Record<number, string[]>>({})
 
   useEffect(() => { setHydrated(true) }, [])
 
@@ -79,6 +81,7 @@ export default function CheckoutPage() {
 
     setLoading(true)
     setError('')
+    setItemErrors({})
     try {
       const result = await orderService.createOrder({
         customer_name: name,
@@ -92,11 +95,25 @@ export default function CheckoutPage() {
         items: validItems,
         payment_mode: paymentMode,
       })
+      storeOrderAccess(result.order_number, result)
       const guestParam = result.is_guest ? '&guest=1' : ''
       router.push(`/payment?order=${result.order_number}&amount=${result.amount_paid_now}${guestParam}`)
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.non_field_errors?.[0] || 'No pudimos completar el pedido. Por favor intenta de nuevo.'
-      setError(msg)
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { detail?: string; non_field_errors?: string[]; items?: Record<string, string | string[]>[] } } })?.response?.data
+      const mediaErrors: Record<number, string[]> = {}
+      if (Array.isArray(data?.items)) {
+        data.items.forEach((line, index) => {
+          if (!line || typeof line !== 'object') return
+          const messages = ['huella_media_id', 'huella_media_token', 'audio_media_id', 'audio_media_token']
+            .flatMap((field) => line[field] ?? [])
+            .filter((message) => typeof message === 'string')
+          if (messages.length) mediaErrors[index] = messages
+        })
+      }
+      setItemErrors(mediaErrors)
+      setError(Object.keys(mediaErrors).length
+        ? 'Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.'
+        : data?.detail || data?.non_field_errors?.[0] || 'No pudimos completar el pedido. Por favor intenta de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -254,6 +271,15 @@ export default function CheckoutPage() {
                       <strong style={{ display: 'block', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--navy)' }}>{item.title}</strong>
                       <span style={{ fontSize: 11, color: 'var(--gray-warm)', display: 'block' }}>× {item.quantity} · {item.size_label} · {item.color_name}</span>
                       <b style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, color: 'var(--terracotta)', fontSize: 14 }}>{fmt(itemTotal)}</b>
+                      {itemErrors[idx] && (
+                        <div role="alert" style={{ color: '#c23b3b', fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>
+                          {itemErrors[idx].map((message) => <p key={message}>{message}</p>)}
+                          <Link
+                            href={item.peluch_slug ? `/peluches/${encodeURIComponent(item.peluch_slug)}?cartItem=${item.peluch_id}-${item.size_id}-${item.color_id}` : '/catalog'}
+                            style={{ color: 'var(--coral)', fontWeight: 700, textDecoration: 'underline' }}
+                          >Volver a personalizar {item.title}</Link>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )

@@ -5,6 +5,30 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Ronda de privacidad — 2026-10-02
+
+La sesión `improvement-order-privacy` trabaja desde `main` en un worktree propio.
+Su alcance autorizado son tres causas: referencias de personalización sin
+autorización, lecturas de pedidos/pagos protegidas sólo por el número comercial
+y eliminación del hero vigente antes de confirmar su reemplazo.
+
+El operador definió recuperación mediante código por correo antes de mostrar
+datos del pedido y acceso por treinta días. Checkout invitado se conserva con
+capacidades firmadas; los códigos de pedidos se separan de los códigos de cuenta.
+Las correcciones del PR #78 pertenecen a otra sesión y no se incorporan aquí.
+La implementación conserva el carrito al recuperar archivos y guarda el acceso
+del pedido antes de navegar al pago. Los enlaces enviados por correo llevan la
+capacidad en el fragmento; se retira antes de enviar analytics. La confirmación
+consulta información autorizada antes de mostrar el resultado o vaciar el carrito.
+
+La autoría de pruebas ya comprobó códigos de un solo uso, límites por pedido y
+reemplazos simultáneos del hero con MySQL scratch y conexiones separadas. Los
+casos de concurrencia no se acreditan con SQLite. La validación final y el CI
+se registran en una sola ronda sobre el commit limpio, con artefactos en el
+worktree y el reporte operativo del toolkit:
+`docs/audits/2026-10-02-mimittos_project-improvement-pass-project-improvement-20261002-order-privacy.md`.
+La entrega requiere PR abierto y CI verde. No se migra la base del servicio.
+
 ## Listados acotados y directorio de usuarios — 2026-10-01
 
 La ronda transversal amplía el PR #76 en la misma rama de sesión.

@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from base_feature_app.models import WompiTransaction
+from base_feature_app.services.order_access_service import ORDER_ACCESS_ERROR, OrderAccessService
 from base_feature_app.services.wompi_service import WompiService
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,10 @@ def payment_status(request, reference: str):
     try:
         tx = WompiTransaction.objects.select_related('order').get(reference=reference)
     except WompiTransaction.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
+    if not OrderAccessService.has_access(request, tx.order):
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
 
     return Response({
         'reference': tx.reference,
@@ -51,7 +55,10 @@ def payment_info(request, order_number: str):
     try:
         tx = WompiTransaction.objects.select_related('order').get(order__order_number=order_number)
     except WompiTransaction.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
+    if not OrderAccessService.has_access(request, tx.order):
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
 
     order = tx.order
     return Response({
@@ -77,6 +84,15 @@ def payment_info(request, order_number: str):
 @permission_classes([AllowAny])
 def process_payment(request):
     order_number = request.data.get('order_number', '')
+
+    try:
+        tx = WompiTransaction.objects.select_related('order').get(order__order_number=order_number)
+    except WompiTransaction.DoesNotExist:
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
+    if not OrderAccessService.has_access(request, tx.order):
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
     method = request.data.get('method', '').upper()
 
     received_keys = sorted(list(request.data.keys()))
@@ -89,11 +105,6 @@ def process_payment(request):
 
     if not order_number or not method:
         return Response({'detail': 'order_number y method son requeridos.'}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        tx = WompiTransaction.objects.select_related('order').get(order__order_number=order_number)
-    except WompiTransaction.DoesNotExist:
-        return Response({'detail': 'Pedido no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     if tx.status == WompiTransaction.Status.APPROVED:
         return Response({'detail': 'Este pedido ya fue pagado.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -208,7 +219,10 @@ def check_payment_status(request, order_number: str):
     try:
         tx = WompiTransaction.objects.select_related('order').get(order__order_number=order_number)
     except WompiTransaction.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
+    if not OrderAccessService.has_access(request, tx.order):
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
 
     if not tx.wompi_id:
         return Response({

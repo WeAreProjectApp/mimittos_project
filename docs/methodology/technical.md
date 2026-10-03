@@ -82,6 +82,24 @@ El servidor manual Next.js usa el puerto 3000. Sus rewrites reenvían `/api` y
 
 ## Patrones de código
 
+Acceso a pedidos: firmas con salt dedicado y vigencia de treinta días, separado
+de la firma reusable por archivo de personalización. El código de pedido tiene
+seis dígitos criptográficos, hash, vigencia de diez minutos y consumo único.
+Se permiten hasta cinco envíos y cinco fallos por pedido/hora; reenvío espera
+sesenta segundos y no reinicia fallos. Código nuevo invalida el anterior.
+Los límites y consumo están dentro de transacciones con `select_for_update`.
+
+El cliente guarda las capacidades por pedido y adjunta `X-Order-Access` sólo
+a sus servicios privados. CORS permite explícitamente esa cabecera. Un enlace
+de correo transmite la capacidad en fragmento, retirado antes de analytics.
+Storage restringido conserva acceso en memoria durante la sesión actual;
+un rechazo del servidor descarta la capacidad y muestra recuperación por correo.
+
+Para comprobar locking, usar MySQL scratch con cuenta/grants exclusivos y
+conexiones separadas. La ronda de privacidad utiliza settings ignorados que
+fuerzan esa base, storage aislado, correo locmem y Huey en memoria. SQLite no
+acredita carreras. No ejecutar migraciones sobre el `.env` enlazado del worktree.
+
 - Una app de dominio: `base_feature_app`, con modelos separados y reexportados
   desde `models/__init__.py`.
 - Vistas DRF funcionales y lógica de negocio en `services/`: analytics, email,

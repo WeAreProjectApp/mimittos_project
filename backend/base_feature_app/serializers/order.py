@@ -9,6 +9,7 @@ from base_feature_app.models import (
     PeluchSizePrice, PersonalizationMedia, WompiTransaction,
 )
 from base_feature_app.serializers.catalog import GlobalSizeSerializer, GlobalColorSerializer
+from base_feature_app.utils.media_access import can_use_media
 
 
 ORDER_ITEM_VALIDATION_BATCH_SIZE = 100
@@ -59,7 +60,9 @@ class _OrderItemLookups:
         }
         self.media = {
             (media.pk, media.media_type): media
-            for media in PersonalizationMedia.objects.filter(pk__in=media_ids).only('id', 'media_type')
+            for media in PersonalizationMedia.objects.filter(pk__in=media_ids).only(
+                'id', 'media_type', 'uploaded_by_id',
+            )
         }
 
 
@@ -109,10 +112,16 @@ class OrderItemCreateSerializer(serializers.Serializer):
     )
     huella_text = serializers.CharField(max_length=60, required=False, allow_blank=True)
     huella_media_id = serializers.IntegerField(required=False, allow_null=True)
+    huella_media_token = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=512,
+    )
     has_corazon = serializers.BooleanField(default=False)
     corazon_phrase = serializers.CharField(max_length=50, required=False, allow_blank=True)
     has_audio = serializers.BooleanField(default=False)
     audio_media_id = serializers.IntegerField(required=False, allow_null=True)
+    audio_media_token = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=512,
+    )
 
     class Meta:
         list_serializer_class = OrderItemCreateListSerializer
@@ -150,6 +159,11 @@ class OrderItemCreateSerializer(serializers.Serializer):
                 media = lookups.media.get((media_id, PersonalizationMedia.MediaType.HUELLA_IMAGE))
                 if media is None:
                     raise serializers.ValidationError({'huella_media_id': 'Imagen de huella no encontrada.'})
+                request = self.context.get('request')
+                if not can_use_media(media, getattr(request, 'user', None), data.get('huella_media_token')):
+                    raise serializers.ValidationError({
+                        'huella_media_id': 'Vuelve a subir la imagen de huella de este peluche para completar tu pedido.',
+                    }, code='media_access_required')
                 data['huella_media'] = media
 
         if data.get('has_audio'):
@@ -161,6 +175,11 @@ class OrderItemCreateSerializer(serializers.Serializer):
             media = lookups.media.get((media_id, PersonalizationMedia.MediaType.AUDIO))
             if media is None:
                 raise serializers.ValidationError({'audio_media_id': 'Audio no encontrado.'})
+            request = self.context.get('request')
+            if not can_use_media(media, getattr(request, 'user', None), data.get('audio_media_token')):
+                raise serializers.ValidationError({
+                    'audio_media_id': 'Vuelve a subir el audio de este peluche para completar tu pedido.',
+                }, code='media_access_required')
             data['audio_media'] = media
 
         data['peluch'] = peluch
