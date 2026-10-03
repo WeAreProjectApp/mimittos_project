@@ -261,7 +261,7 @@ def test_hero_image_upload_uses_unique_filename_per_upload(admin_client, hero_st
     assert first.data['image_url'] != second.data['image_url']
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_hero_image_upload_deletes_previous_local_image(admin_client, hero_storage):
     first = admin_client.post(
         '/api/content/hero-image/upload/',
