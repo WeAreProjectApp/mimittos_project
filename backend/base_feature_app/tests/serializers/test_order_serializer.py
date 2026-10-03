@@ -1,6 +1,7 @@
 """Test order serializer behavior."""
 
 import pytest
+from django.core import signing
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Library
@@ -23,6 +24,8 @@ from base_feature_app.serializers.order import (
     OrderStatusUpdateSerializer,
     OrderTrackingUpdateSerializer,
 )
+from base_feature_app.services.order_access_service import ORDER_ACCESS_SALT
+from base_feature_app.utils.media_access import issue_media_token
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -161,6 +164,41 @@ def _cart_lines(count, *, with_customizations=False):
         peluch.available_colors.add(color)
         PeluchSizePrice.objects.create(peluch=peluch, size=size, price=90000, is_available=True)
         lines.append(_base_item(peluch.id, size.id, color.id))
+    return lines
+
+
+def _cart_lines_with_signed_media(count, uploaded_by):
+    """Prepare all media before the query budget begins."""
+    lines = _cart_lines(count, with_customizations=True)
+    for index, line in enumerate(lines):
+        if index % 2 == 0:
+            media = PersonalizationMedia.objects.create(
+                uploaded_by=uploaded_by,
+                media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+                file=f'personalizations/query-budget-{index}.jpg',
+                file_size_kb=100,
+            )
+            lines[index] = {
+                **line,
+                'has_huella': True,
+                'huella_type': OrderItem.HuellaType.IMAGE,
+                'huella_media_id': media.pk,
+                'huella_media_token': issue_media_token(media),
+            }
+        else:
+            media = PersonalizationMedia.objects.create(
+                uploaded_by=uploaded_by,
+                media_type=PersonalizationMedia.MediaType.AUDIO,
+                file=f'personalizations/query-budget-{index}.mp3',
+                file_size_kb=100,
+                duration_sec=4,
+            )
+            lines[index] = {
+                **line,
+                'has_audio': True,
+                'audio_media_id': media.pk,
+                'audio_media_token': issue_media_token(media),
+            }
     return lines
 
 
@@ -359,16 +397,9 @@ def test_order_create_validation_bounds_reads_per_hundred_lines(line_count, max_
 
 
 @pytest.mark.django_db
-def test_order_create_validation_bounds_reads_with_personalization_media(huella_image, audio_media):
-    """Falla si la validación de media personalizada añade lecturas por cada línea."""
-    lines = _cart_lines(50, with_customizations=True)
-    lines[0] = {
-        **lines[0],
-        'has_huella': True,
-        'huella_type': OrderItem.HuellaType.IMAGE,
-        'huella_media_id': huella_image.id,
-    }
-    lines[1] = {**lines[1], 'has_audio': True, 'audio_media_id': audio_media.id}
+def test_order_create_validation_bounds_reads_with_personalization_media(existing_user):
+    """Falla si cincuenta capacidades firmadas vuelven la validación de media N+1."""
+    lines = _cart_lines_with_signed_media(50, existing_user)
 
     serializer = OrderCreateSerializer(data=_order_payload(lines))
     with CaptureQueriesContext(connection) as context:
@@ -376,8 +407,152 @@ def test_order_create_validation_bounds_reads_with_personalization_media(huella_
     select_count = sum(query['sql'].lstrip().upper().startswith('SELECT') for query in context.captured_queries)
 
     assert select_count <= 6
+    assert serializer.validated_data['items'][0]['huella_media'].media_type == PersonalizationMedia.MediaType.HUELLA_IMAGE
+    assert serializer.validated_data['items'][1]['audio_media'].media_type == PersonalizationMedia.MediaType.AUDIO
+
+
+@pytest.mark.django_db
+def test_order_create_rejects_foreign_huella_without_capability(huella_peluch_with_price, size, color, huella_image):
+    """Falla si conocer el id de una huella ajena vuelve a autorizarla."""
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+    }])
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert not serializer.is_valid()
+    error = serializer.errors['items'][0]['huella_media_id'][0]
+    assert error.code == 'media_access_required'
+    assert str(error) == 'Vuelve a subir la imagen de huella de este peluche para completar tu pedido.'
+
+
+@pytest.mark.django_db
+def test_order_create_accepts_huella_with_signed_capability(huella_peluch_with_price, size, color, huella_image):
+    """Falla si una capacidad firmada para la huella deja de conservar la referencia legítima."""
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+        'huella_media_token': issue_media_token(huella_image),
+    }])
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert serializer.is_valid(), serializer.errors
     assert serializer.validated_data['items'][0]['huella_media'].pk == huella_image.pk
-    assert serializer.validated_data['items'][1]['audio_media'].pk == audio_media.pk
+
+
+@pytest.mark.django_db
+def test_order_create_accepts_huella_from_authenticated_uploader(huella_peluch_with_price, size, color, huella_image):
+    """Falla si el uploader autenticado pierde acceso a su propia huella sin token."""
+    request = APIRequestFactory().post('/')
+    request.user = huella_image.uploaded_by
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+    }])
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': request})
+
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data['items'][0]['huella_media'].pk == huella_image.pk
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    'foreign_token',
+    [
+        pytest.param('other_huella', id='other-file'),
+        pytest.param('audio', id='other-media-type'),
+        pytest.param('order', id='order-capability'),
+        pytest.param('tampered', id='tampered'),
+    ],
+)
+def test_order_create_rejects_huella_with_cross_scope_token(
+    huella_peluch_with_price, size, color, huella_image, audio_media, foreign_token,
+):
+    """Falla si una firma de otro recurso o propósito autoriza una huella ajena."""
+    other_huella = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/2026/01/other.jpg', file_size_kb=100,
+    )
+    token_by_case = {
+        'other_huella': issue_media_token(other_huella),
+        'audio': issue_media_token(audio_media),
+        'order': signing.dumps({'order_id': 123}, salt=ORDER_ACCESS_SALT),
+        'tampered': f'{issue_media_token(huella_image)}x',
+    }
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+        'huella_media_token': token_by_case[foreign_token],
+    }])
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert not serializer.is_valid()
+    assert serializer.errors['items'][0]['huella_media_id'][0].code == 'media_access_required'
+
+
+@pytest.mark.django_db
+def test_order_create_rejects_foreign_audio_without_capability(
+    huella_peluch_with_price, size, color, audio_media,
+):
+    """Falla si conocer el id de un audio ajeno vuelve a autorizarlo sin capacidad."""
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_audio': True,
+        'audio_media_id': audio_media.id,
+    }])
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert not serializer.is_valid()
+    assert serializer.errors['items'][0]['audio_media_id'][0].code == 'media_access_required'
+
+
+@pytest.mark.django_db
+def test_order_create_does_not_use_customer_email_as_media_identity(
+    huella_peluch_with_price, size, color, huella_image,
+):
+    """Falla si el email enviado por checkout suplanta al uploader real de una huella."""
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+    }])
+    payload['customer_email'] = huella_image.uploaded_by.email
+
+    serializer = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert not serializer.is_valid()
+    assert serializer.errors['items'][0]['huella_media_id'][0].code == 'media_access_required'
+
+
+@pytest.mark.django_db
+def test_order_create_reuses_signed_huella_capability(huella_peluch_with_price, size, color, huella_image):
+    """Falla si una capacidad legítima se consume al primer intento de checkout."""
+    payload = _order_payload([{
+        **_base_item(huella_peluch_with_price.id, size.id, color.id),
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': huella_image.id,
+        'huella_media_token': issue_media_token(huella_image),
+    }])
+    first = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+    repeated = OrderCreateSerializer(data=payload, context={'request': APIRequestFactory().post('/')})
+
+    assert first.is_valid(), first.errors
+    assert repeated.is_valid(), repeated.errors
 
 
 @pytest.mark.django_db

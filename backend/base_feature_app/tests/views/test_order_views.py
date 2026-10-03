@@ -5,9 +5,11 @@ from datetime import timezone as datetime_timezone
 from unittest.mock import patch
 
 import pytest
+from django.core import signing
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Library
+from freezegun import freeze_time
 
 from base_feature_app.models import (
     Category,
@@ -20,6 +22,10 @@ from base_feature_app.models import (
     PeluchSizePrice,
     PersonalizationMedia,
 )
+from base_feature_app.services.order_access_service import (
+    ORDER_ACCESS_SALT,
+    OrderAccessService,
+)
 from base_feature_app.tests.factories import (
     GlobalColorFactory,
     GlobalSizeFactory,
@@ -27,6 +33,10 @@ from base_feature_app.tests.factories import (
 )
 
 MAX_ORDER_READ_QUERIES = 4
+
+
+def _order_access_headers(order):
+    return {'HTTP_X_ORDER_ACCESS': OrderAccessService.grant_access(order)['order_access_token']}
 
 
 def _create_read_items(order, count, *, include_media=False):
@@ -309,13 +319,45 @@ def test_create_order_returns_item_errors_without_creating_an_order_for_object_i
 
 
 @pytest.mark.django_db
+def test_create_order_rejects_foreign_huella_without_side_effects(
+    anon_client, order_data, peluch_with_price, existing_user,
+):
+    """Falla si un 400 por huella ajena crea líneas o marca el archivo como usado."""
+    peluch_with_price.has_huella = True
+    peluch_with_price.save(update_fields=['has_huella'])
+    media = PersonalizationMedia.objects.create(
+        uploaded_by=existing_user,
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/foreign-huella.jpg',
+        file_size_kb=100,
+        is_used=False,
+    )
+    order_data['items'][0].update({
+        'has_huella': True,
+        'huella_type': OrderItem.HuellaType.IMAGE,
+        'huella_media_id': media.pk,
+    })
+
+    response = anon_client.post('/api/orders/', order_data, format='json')
+
+    media.refresh_from_db()
+    assert response.status_code == 400
+    assert response.data['items'][0]['huella_media_id'][0].code == 'media_access_required'
+    assert Order.objects.count() == 0
+    assert OrderItem.objects.count() == 0
+    assert media.is_used is False
+
+
+@pytest.mark.django_db
 @patch('base_feature_app.views.order_views.NotificationService.notify_new_order_admin', return_value=True)
-def test_create_order_returns_201_with_expected_keys(mock_notify, anon_client, order_data):
-    """Verify create order returns 201 with expected keys."""
+@freeze_time('2026-10-02 10:00:00')
+def test_create_order_returns_scoped_access_capability(mock_notify, anon_client, order_data):
+    """Falla si una orden nueva deja de entregar una capacidad limitada a ese pedido."""
     response = anon_client.post('/api/orders/', order_data, format='json')
     assert response.status_code == 201
-    for key in ('order_number', 'deposit_amount', 'balance_amount', 'total_amount', 'is_guest'):
-        assert key in response.data
+    order = Order.objects.get(order_number=response.data['order_number'])
+    assert response.data['expires_at'] == '2026-11-01T10:00:00+00:00'
+    assert signing.loads(response.data['order_access_token'], salt=ORDER_ACCESS_SALT) == {'order_id': order.pk}
 
 
 # ---------------------------------------------------------------------------
@@ -324,24 +366,37 @@ def test_create_order_returns_201_with_expected_keys(mock_notify, anon_client, o
 
 @pytest.mark.django_db
 def test_track_order_returns_200_for_valid_order(anon_client, existing_order):
-    """Verify track order returns 200 for valid order."""
-    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+    """Falla si una capacidad válida deja de abrir el seguimiento de su pedido."""
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
     assert response.status_code == 200
     assert response.data['order_number'] == existing_order.order_number
 
 
 @pytest.mark.django_db
-def test_track_order_returns_404_for_nonexistent_order(anon_client):
-    """Verify track order returns 404 for nonexistent order."""
+def test_track_order_hides_nonexistent_order_without_capability(anon_client):
+    """Falla si un pedido inexistente revela una respuesta distinta a un acceso sin prueba."""
     response = anon_client.get('/api/orders/track/MMT-NOEXISTE-0000/')
-    assert response.status_code == 404
+    assert response.status_code == 403
+    assert response.data['code'] == 'order_access_required'
 
 
 @pytest.mark.django_db
 def test_track_order_returns_status_in_response(anon_client, existing_order):
     """Verify track order returns status in response."""
-    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
     assert 'status' in response.data
+
+
+@pytest.mark.django_db
+def test_track_order_requires_capability_for_existing_order(anon_client, existing_order):
+    """Falla si conocer un número de pedido existente vuelve a exponer su seguimiento."""
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+
+    assert response.status_code == 403
+    assert response.data == {
+        'code': 'order_access_required',
+        'detail': 'Verifica tu correo para acceder a este pedido.',
+    }
 
 
 @pytest.mark.django_db
@@ -353,11 +408,11 @@ def test_track_order_query_budget_is_constant(
     _create_read_items(existing_order, 1, include_media=True)
 
     with CaptureQueriesContext(connection) as one_item_queries:
-        one_item_response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+        one_item_response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
 
     _create_read_items(existing_order, 49, include_media=True)
     with CaptureQueriesContext(connection) as fifty_item_queries:
-        fifty_item_response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+        fifty_item_response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
 
     assert one_item_response.status_code == 200
     assert fifty_item_response.status_code == 200
@@ -375,7 +430,7 @@ def test_track_order_serializes_media_values(
     settings.MEDIA_ROOT = tmp_path
     created_item = _create_read_items(existing_order, 1, include_media=True)[0]
 
-    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
 
     item = response.data['items'][0]
     assert response.status_code == 200
@@ -398,7 +453,7 @@ def test_track_order_serializes_optional_item_relations(anon_client, existing_or
         personalization_cost=5000,
     )
 
-    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
 
     item = response.data['items'][0]
     assert response.status_code == 200
@@ -412,7 +467,7 @@ def test_track_order_serializes_optional_item_relations(anon_client, existing_or
 @pytest.mark.django_db
 def test_track_order_returns_null_payment_fields(anon_client, existing_order):
     """Fails if tracking no longer supports unpaid orders without a transaction."""
-    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/')
+    response = anon_client.get(f'/api/orders/track/{existing_order.order_number}/', **_order_access_headers(existing_order))
 
     assert response.status_code == 200
     assert response.data['payment_status'] is None
@@ -582,6 +637,16 @@ def test_order_detail_returns_403_for_other_user(db, existing_order):
 
 
 @pytest.mark.django_db
+def test_order_detail_rejects_guest_capability(anon_client, existing_order):
+    """Falla si una capacidad de seguimiento expone el historial completo del pedido."""
+    response = anon_client.get(
+        f'/api/orders/{existing_order.order_number}/', **_order_access_headers(existing_order),
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 def test_order_detail_returns_404_for_nonexistent(admin_client):
     """Verify order detail returns 404 for nonexistent."""
     response = admin_client.get('/api/orders/MMT-NOEXISTE-0000/')
@@ -589,8 +654,8 @@ def test_order_detail_returns_404_for_nonexistent(admin_client):
 
 
 @pytest.mark.django_db
-def test_order_detail_allows_email_owner(db, existing_user):
-    """Fails if the nullable customer email ownership path is removed."""
+def test_order_detail_rejects_matching_email_without_customer_owner(db, existing_user):
+    """Falla si igualar el email del visitante vuelve a autorizar el detalle privado."""
     from rest_framework.test import APIClient
 
     email_owned_order = Order.objects.create(
@@ -609,8 +674,8 @@ def test_order_detail_allows_email_owner(db, existing_user):
 
     response = client.get(f'/api/orders/{email_owned_order.order_number}/')
 
-    assert response.status_code == 200
-    assert response.data['order_number'] == email_owned_order.order_number
+    assert response.status_code == 403
+    assert response.data['detail'] == 'No tienes permiso para ver este pedido.'
 
 
 @pytest.mark.django_db

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from base_feature_app.models import PersonalizationMedia
 from base_feature_app.services.media_service import MediaOptimizationService
+from base_feature_app.utils.media_access import issue_media_token
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ def upload_media(request):
     return Response(
         {
             'media_id': media.id,
+            'media_token': issue_media_token(media),
             'file_url': request.build_absolute_uri(media.file.url),
             'file_size_kb': media.file_size_kb,
             'duration_sec': media.duration_sec,

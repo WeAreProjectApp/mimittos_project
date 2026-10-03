@@ -122,10 +122,12 @@ export type CartItem = {
   huella_type: 'name' | 'date' | 'letter' | 'image' | ''
   huella_text: string
   huella_media_id: number | null
+  huella_media_token?: string | null
   has_corazon: boolean
   corazon_phrase: string
   has_audio: boolean
   audio_media_id: number | null
+  audio_media_token?: string | null
   deposit_percentage: number
   full_payment_discount_pct: number
   free_shipping: boolean
@@ -233,7 +235,12 @@ export type OrderTrackingInfo = {
   items: OrderItemRead[]
 }
 
-export type OrderCreateResponse = {
+export type OrderAccessGrant = {
+  order_access_token: string
+  expires_at: string
+}
+
+export type OrderCreateResponse = OrderAccessGrant & {
   order_number: string
   deposit_amount: number
   balance_amount: number
@@ -269,6 +276,7 @@ export type HomeReview = {
 
 export type MediaUploadResponse = {
   media_id: number
+  media_token: string
   file_url: string
   file_size_kb: number
   duration_sec: number | null

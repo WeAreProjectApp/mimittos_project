@@ -1,6 +1,6 @@
 {
-  "version": "1.5.4",
-  "lastUpdated": "2026-10-01",
+  "version": "1.5.5",
+  "lastUpdated": "2026-10-02",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -465,12 +465,13 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User opens huella section, selects type (name/date/letter/image), fills text or uploads image, extra cost shown",
+      "description": "User selects a huella type and, for image type, uploads an image. The cart retains both media_id and the per-upload capability token so the same visitor can submit it at checkout; a rejected legacy or other-visitor image is recovered from checkout without changing the cart line product, size, color, or quantity.",
       "expectedSpecs": 1,
       "outcomes": [
         "display",
         "success",
-        "error"
+        "error",
+        "failure"
       ],
       "knownGaps": [
         "Only the text-type sub-path ('Nombre', no network) is tested (frontend/e2e/app/peluch-detail.spec.ts:71-89). The image-upload sub-path (huellaType==='image') calls a real POST (mediaService.uploadImage -> handleHuellaImageUpload, frontend/app/peluches/[slug]/page.tsx:193-205) with real success (huellaMediaId set, button becomes '✓ Imagen subida') and error (huellaError banner, frontend/app/peluches/[slug]/page.tsx:467-469, distinct copy from backend's `{'detail': str(exc)}` on a corrupt/invalid file, backend/base_feature_app/views/media_views.py:39-47) surfaces — neither is exercised by any test."
@@ -496,11 +497,13 @@
         "shared"
       ],
       "priority": "P3",
-      "description": "User opens audio section and uploads an audio file; media_id stored before adding to cart",
+      "description": "User uploads audio and the cart stores media_id with the per-upload capability token. Upload validation or server rejection remains visible; checkout can send the visitor back to replace an inaccessible file while preserving the cart line.",
       "expectedSpecs": 1,
       "outcomes": [
+        "display",
         "success",
-        "error"
+        "error",
+        "failure"
       ],
       "knownGaps": [
         "Real POST (mediaService.uploadAudio) with real success (audioMediaId set, 'Audio listo' + player render, frontend/app/peluches/[slug]/page.tsx:510-524) and error paths: a client-side size-limit rejection before any network call (page.tsx:208-212, distinct copy 'El archivo es demasiado grande...') and a server-side reject surfaced via audioError with the backend's `detail` message (page.tsx:220-224, backend/base_feature_app/views/media_views.py:39-47). The one existing test (frontend/e2e/app/peluch-detail.spec.ts:114-137) uploads fake non-audio bytes against the REAL backend and only asserts the upload button's initial label stays visible — it neither asserts a specific error message nor a successful upload, so it is weak evidence at best for whichever path it happens to hit."
@@ -513,9 +516,10 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "After POST /api/orders/ succeeds, frontend navigates to /payment with the order number and amount due now; Wompi method submission happens on the payment page",
+      "description": "After POST /api/orders/ succeeds, frontend persists the per-order access capability before navigating to /payment. Wompi method submission remains owned by the payment flows.",
       "expectedSpecs": 1,
       "outcomes": [
+        "display",
         "success",
         "error",
         "failure"
@@ -541,10 +545,12 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User enters order number on /tracking, fetches GET /api/orders/track/:number/, timeline updates to current status",
+      "description": "User enters an order number. Owner session or per-order capability loads the private timeline; missing or expired access opens email-code recovery, while unrelated request failure shows the generic tracking error.",
       "expectedSpecs": 1,
       "outcomes": [
+        "display",
         "success",
+        "error",
         "failure"
       ]
     },
@@ -555,10 +561,13 @@
         "shared"
       ],
       "priority": "P3",
-      "description": "Wompi redirects to /tracking?order=PELUCH-XXXX; page auto-searches that order number and shows timeline",
+      "description": "Tracking links use ?order= and #access. The browser consumes and removes the fragment before analytics, stores the capability and loads the timeline. An expired or absent capability opens email-code recovery.",
       "expectedSpecs": 1,
       "outcomes": [
-        "display"
+        "display",
+        "success",
+        "error",
+        "failure"
       ]
     },
     "auth-login-success": {
@@ -649,10 +658,12 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "After order created, user lands on /payment and sees available payment methods (Wompi widget or method list)",
+      "description": "Payment loads private totals through the per-order capability before showing payment methods. Missing or expired access opens email-code recovery; an unrelated failure keeps the retry state.",
       "expectedSpecs": 1,
       "outcomes": [
         "display",
+        "success",
+        "error",
         "failure"
       ]
     },
@@ -663,10 +674,13 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "After successful Wompi payment, /order-confirmed renders order number and success message",
+      "description": "Confirmation reads private payment status before showing payment state. It clears the cart only after an approved authorized result. Missing or expired access opens email-code recovery; transient failure remains retryable.",
       "expectedSpecs": 1,
       "outcomes": [
-        "display"
+        "display",
+        "success",
+        "error",
+        "failure"
       ]
     },
     "review-submit": {
@@ -996,7 +1010,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "User selects Tarjeta on /payment, fills card number, holder, expiry, CVV, and submits; paymentService.processCard tokenizes and confirms — on success navigates to /order-confirmed",
+      "description": "User submits payment for an already authorized order. The process request carries its per-order capability; expired access switches to recovery. Existing method-specific validation and provider failures remain visible.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1011,7 +1025,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "User selects Nequi on /payment, enters phone number, and submits; paymentService.processNequi pushes notification — on success navigates to /order-confirmed",
+      "description": "User submits payment for an already authorized order. The process request carries its per-order capability; expired access switches to recovery. Existing method-specific validation and provider failures remain visible.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1026,7 +1040,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User selects PSE on /payment, picks bank, person type, ID type and ID number, then submits; paymentService.processPse returns redirect_url and the browser navigates to the bank portal",
+      "description": "User submits payment for an already authorized order. The process request carries its per-order capability; expired access switches to recovery. Existing method-specific validation and provider failures remain visible.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1056,7 +1070,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User selects Bancolombia on /payment, picks person type, ID type and ID number, then submits; paymentService.processBancolombia returns redirect_url and the browser navigates to Bancolombia",
+      "description": "User submits payment for an already authorized order. The process request carries its per-order capability; expired access switches to recovery. Existing method-specific validation and provider failures remain visible.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1254,10 +1268,12 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff drops or selects a file on /backoffice/configuracion and clicks 'Subir imagen'; multipart POST /api/content/hero-image/upload/ returns the new URL and the preview updates",
+      "description": "Staff selects and uploads a hero image. Success updates preview and public hero; invalid input is reported as error. Storage or database failure reports an error while the previously published hero remains active.",
       "expectedSpecs": 1,
       "outcomes": [
+        "display",
         "success",
+        "error",
         "failure"
       ]
     },
@@ -1356,6 +1372,39 @@
       "expectedSpecs": 1,
       "outcomes": [
         "success",
+        "failure"
+      ]
+    },
+    "checkout-personalization-media-recovery": {
+      "name": "Recover inaccessible personalization media at checkout",
+      "module": "checkout",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P1",
+      "description": "When order creation rejects a huella or audio reference without uploader identity or signed upload capability, checkout identifies the affected line, keeps the cart intact, and links to personalization recovery. Reupload changes the file while preserving product, size, color and quantity.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "display",
+        "success",
+        "error",
+        "failure"
+      ]
+    },
+    "order-access-recovery": {
+      "name": "Recover guest access to a private order",
+      "module": "orders",
+      "roles": [
+        "guest",
+        "user"
+      ],
+      "priority": "P1",
+      "description": "A visitor denied tracking, payment or confirmation enters the purchase email, receives a generic acknowledgement, submits a six-digit code, and receives a 30-day per-order capability. Wrong, expired, consumed, rate-limited or mismatched details show the same verification error without revealing whether an order/email exists.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "display",
+        "success",
+        "error",
         "failure"
       ]
     }

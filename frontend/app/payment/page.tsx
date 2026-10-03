@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 
 import { paymentService, type AcceptanceTokens, type PaymentInfo, type PseBank } from '@/lib/services/paymentService'
+import OrderAccessRecovery from '@/components/orders/OrderAccessRecovery'
+import { forgetOrderAccess, isOrderAccessRequired } from '@/lib/utils/orderAccess'
 
 type Method = 'CARD' | 'NEQUI' | 'PSE' | 'BANCOLOMBIA_TRANSFER'
 
@@ -104,6 +106,9 @@ function PaymentContent() {
   const [selected, setSelected] = useState<Method | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [infoLoading, setInfoLoading] = useState(!!orderNumber)
+  const [accessRequired, setAccessRequired] = useState(false)
+  const [accessAttempt, setAccessAttempt] = useState(0)
   // Card fields
   const [cardNumber, setCardNumber] = useState('')
   const [cardHolder, setCardHolder] = useState('')
@@ -122,22 +127,41 @@ function PaymentContent() {
 
   useEffect(() => {
     if (!orderNumber) return
-    paymentService.getInfo(orderNumber).then((data) => {
-      setInfo(data)
-      if (data.status === 'approved') {
-        router.replace(`/tracking?order=${orderNumber}`)
+    let cancelled = false
+    setInfoLoading(true)
+    setAccessRequired(false)
+    setInfo(null)
+    setAcceptance(null)
+    setError('')
+    async function load() {
+      try {
+        const data = await paymentService.getInfo(orderNumber)
+        if (cancelled) return
+        setInfo(data)
+        if (data.status === 'approved') router.replace(`/tracking?order=${orderNumber}`)
+        if (data.customer_name) setCardHolder(data.customer_name)
+        if (data.customer_phone) setNequiPhone(data.customer_phone)
+        try {
+          const tokens = await paymentService.getAcceptanceTokens()
+          if (!cancelled) setAcceptance(tokens)
+        } catch {
+          if (!cancelled) setError('No se pudo cargar la autorización de Wompi. Recarga la página.')
+        }
+      } catch (error: unknown) {
+        if (cancelled) return
+        if (isOrderAccessRequired(error)) {
+          forgetOrderAccess(orderNumber)
+          setAccessRequired(true)
+        } else {
+          setError('No pudimos cargar el pedido. Intenta de nuevo más tarde.')
+        }
+      } finally {
+        if (!cancelled) setInfoLoading(false)
       }
-      if (data.customer_name) setCardHolder(data.customer_name)
-      if (data.customer_phone) setNequiPhone(data.customer_phone)
-    }).catch(() => {})
-    paymentService
-      .getAcceptanceTokens()
-      .then(setAcceptance)
-      .catch((e) => {
-        console.error('getAcceptanceTokens failed', e)
-        setError('No se pudo cargar la autorización de Wompi. Recarga la página.')
-      })
-  }, [orderNumber, router])
+    }
+    load()
+    return () => { cancelled = true }
+  }, [orderNumber, router, accessAttempt])
 
   useEffect(() => {
     if (selected === 'PSE') {
@@ -150,7 +174,7 @@ function PaymentContent() {
   const deposit = info?.amount_paid_now ?? info?.deposit_amount ?? amountParam
 
   async function handleSubmit() {
-    if (!selected || !orderNumber) return
+    if (!selected || !orderNumber || !info || accessRequired) return
     setLoading(true)
     setError('')
 
@@ -218,6 +242,12 @@ function PaymentContent() {
         )
       }
     } catch (err: any) {
+      if (isOrderAccessRequired(err)) {
+        forgetOrderAccess(orderNumber)
+        setInfo(null)
+        setAccessRequired(true)
+        return
+      }
       const msg =
         err?.response?.data?.wompi_detail ||
         err?.response?.data?.detail ||
@@ -227,6 +257,16 @@ function PaymentContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (accessRequired) {
+    return <main style={{ maxWidth: 580, margin: '0 auto', padding: '40px 20px' }}><OrderAccessRecovery key={orderNumber} orderNumber={orderNumber} onAccessGranted={() => setAccessAttempt((attempt) => attempt + 1)} /></main>
+  }
+  if (infoLoading) {
+    return <main role="status" style={{ textAlign: 'center', padding: 40 }}>Cargando el pedido...</main>
+  }
+  if (!info) {
+    return <main style={{ maxWidth: 580, margin: '0 auto', padding: '40px 20px' }}><p role="alert">{error || 'Selecciona un pedido para continuar al pago.'}</p>{orderNumber && <button type="button" onClick={() => setAccessAttempt((attempt) => attempt + 1)}>Volver a intentar</button>}<Link href="/cart">Volver al carrito</Link></main>
   }
 
   return (

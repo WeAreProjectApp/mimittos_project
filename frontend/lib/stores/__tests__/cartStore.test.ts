@@ -114,6 +114,32 @@ describe('cartStore', () => {
     })
   })
 
+  describe('updatePersonalization', () => {
+    it('updates personalization in place', () => {
+      // Fails if recovery turns two ordered peluches into a different cart line.
+      const { result } = renderHook(() => useCartStore())
+      const original = { ...item1, quantity: 2, has_huella: true, huella_media_id: 10, huella_media_token: 'old-huella' }
+      act(() => {
+        result.current.addToCart(original)
+        result.current.updatePersonalization({
+          ...original,
+          personalization_cost: 12000,
+          huella_media_id: 44,
+          huella_media_token: 'fresh-huella',
+          has_audio: true,
+          audio_media_id: 45,
+          audio_media_token: 'fresh-audio',
+        })
+      })
+
+      expect(result.current.items).toEqual([expect.objectContaining({
+        peluch_id: 1, size_id: 2, color_id: 1, quantity: 2,
+        personalization_cost: 12000, huella_media_id: 44, huella_media_token: 'fresh-huella',
+        audio_media_id: 45, audio_media_token: 'fresh-audio',
+      })])
+    })
+  })
+
   describe('subtotal', () => {
     it('should calculate correct subtotal using lineTotal', () => {
       const { result } = renderHook(() => useCartStore())

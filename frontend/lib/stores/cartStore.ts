@@ -62,6 +62,7 @@ export function calcBalanceAtDelivery(items: CartItem[], mode: PaymentMode) {
 type CartState = {
   items: CartItem[]
   addToCart: (item: CartItem) => void
+  updatePersonalization: (item: CartItem) => void
   removeFromCart: (peluch_id: number, size_id: number, color_id: number) => void
   clearCart: () => void
   updateQuantity: (peluch_id: number, size_id: number, color_id: number, quantity: number) => void
@@ -89,6 +90,25 @@ export const useCartStore = create<CartState>()(
           }
           return { items: [...state.items, item] }
         })
+      },
+
+      updatePersonalization: (item) => {
+        set((state) => ({
+          items: state.items.map((existing) => cartKey(existing) === cartKey(item) ? {
+            ...existing,
+            personalization_cost: item.personalization_cost,
+            has_huella: item.has_huella,
+            huella_type: item.huella_type,
+            huella_text: item.huella_text,
+            huella_media_id: item.huella_media_id,
+            huella_media_token: item.huella_media_token,
+            has_corazon: item.has_corazon,
+            corazon_phrase: item.corazon_phrase,
+            has_audio: item.has_audio,
+            audio_media_id: item.audio_media_id,
+            audio_media_token: item.audio_media_token,
+          } : existing),
+        }))
       },
 
       removeFromCart: (peluch_id, size_id, color_id) => {

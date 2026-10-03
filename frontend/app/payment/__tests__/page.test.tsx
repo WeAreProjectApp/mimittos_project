@@ -95,4 +95,15 @@ describe('PaymentPage', () => {
     expect(screen.getByRole('option', { name: 'CE' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'NIT' })).not.toBeInTheDocument()
   })
+
+  it('shows recovery without loading Wompi when order access is rejected', async () => {
+    // Fails if a private payment page contacts Wompi before its order access is verified.
+    mockGetInfo.mockRejectedValue({ response: { status: 403, data: { code: 'order_access_required' } } })
+
+    render(<Suspense fallback={null}><PaymentPage /></Suspense>)
+
+    expect(await screen.findByTestId('order-access-recovery')).toBeInTheDocument()
+    // quality: allow-mock-only (there is no public UI for a Wompi bootstrap request)
+    expect(mockGetAcceptanceTokens).not.toHaveBeenCalled()
+  })
 })

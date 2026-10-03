@@ -1,4 +1,5 @@
 import { api } from './http'
+import { orderAccessConfig } from '../utils/orderAccess'
 
 const WOMPI_API_URL = process.env.NEXT_PUBLIC_WOMPI_API_URL ?? ''
 const WOMPI_PUBLIC_KEY = process.env.NEXT_PUBLIC_WOMPI_PUBLIC_KEY ?? ''
@@ -62,13 +63,13 @@ export type AcceptanceTokens = {
 
 export const paymentService = {
   getInfo: (orderNumber: string) =>
-    api.get<PaymentInfo>(`/payment/info/${orderNumber}/`).then((r) => r.data),
+    api.get<PaymentInfo>(`/payment/info/${orderNumber}/`, orderAccessConfig(orderNumber)).then((r) => r.data),
 
   getPseBanks: () =>
     api.get<PseBank[]>('/payment/pse-banks/').then((r) => r.data),
 
   pollStatus: (orderNumber: string) =>
-    api.get<PaymentInfo>(`/payment/info/${orderNumber}/`).then((r) => r.data),
+    api.get<PaymentInfo>(`/payment/info/${orderNumber}/`, orderAccessConfig(orderNumber)).then((r) => r.data),
 
   checkStatus: (orderNumber: string) =>
     api
@@ -79,7 +80,7 @@ export const paymentService = {
         wompi_status_message: string
         payment_method_type: string
         amount_in_cents: number
-      }>(`/payment/check/${orderNumber}/`)
+      }>(`/payment/check/${orderNumber}/`, orderAccessConfig(orderNumber))
       .then((r) => r.data),
 
   getAcceptanceTokens: async (): Promise<AcceptanceTokens> => {
@@ -103,7 +104,7 @@ export const paymentService = {
         installments: 1,
         acceptance_token: acceptanceToken,
         acceptance_personal_auth_token: personalAuthToken,
-      })
+      }, orderAccessConfig(orderNumber))
       .then((r) => r.data),
 
   processNequi: (orderNumber: string, phoneNumber: string, acceptanceToken: string, personalAuthToken: string) =>
@@ -114,7 +115,7 @@ export const paymentService = {
         phone_number: phoneNumber,
         acceptance_token: acceptanceToken,
         acceptance_personal_auth_token: personalAuthToken,
-      })
+      }, orderAccessConfig(orderNumber))
       .then((r) => r.data),
 
   processPse: (
@@ -136,7 +137,7 @@ export const paymentService = {
         user_legal_id: userLegalId,
         acceptance_token: acceptanceToken,
         acceptance_personal_auth_token: personalAuthToken,
-      })
+      }, orderAccessConfig(orderNumber))
       .then((r) => r.data),
 
   processBancolombia: (
@@ -152,7 +153,7 @@ export const paymentService = {
         method: 'BANCOLOMBIA_TRANSFER',
         acceptance_token: acceptanceToken,
         acceptance_personal_auth_token: personalAuthToken,
-      })
+      }, orderAccessConfig(orderNumber))
       .then((r) => r.data),
 
   tokenizeCard: async (data: CardTokenData): Promise<string> => {
