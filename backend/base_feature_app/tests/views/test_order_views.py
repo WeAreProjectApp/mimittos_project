@@ -78,10 +78,12 @@ def _create_status_histories(order, count, *, start_index=0):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-    authors = User.objects.bulk_create([
-        User(email=f'history-author-{author_index}@example.com')
+    author_emails = [
+        f'history-author-{author_index}@example.com'
         for author_index in range(start_index, start_index + count)
-    ])
+    ]
+    User.objects.bulk_create([User(email=email) for email in author_emails])
+    authors = User.objects.filter(email__in=author_emails)
     OrderStatusHistory.objects.bulk_create([
         OrderStatusHistory(
             order=order,
@@ -91,7 +93,7 @@ def _create_status_histories(order, count, *, start_index=0):
         )
         for author in authors
     ])
-    return {author.email for author in authors}
+    return set(author_emails)
 
 # ---------------------------------------------------------------------------
 # Fixtures
