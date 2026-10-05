@@ -1,12 +1,17 @@
+# ruff: noqa: D100, D103
+
+import re
 from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.core import signing
 from django.test import override_settings
 from django.utils import timezone
 
 from base_feature_app.models import Order
 from base_feature_app.services.notification_service import NotificationService
+from base_feature_app.services.order_access_service import ORDER_ACCESS_SALT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -85,6 +90,37 @@ def test_notify_order_confirmation_updates_last_sent_at(mock_mail, base_order):
 def test_notify_order_confirmation_returns_false_on_smtp_error(mock_mail, base_order):
     result = NotificationService.notify_order_confirmation(base_order)
     assert result is False
+
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail', side_effect=RuntimeError('secret-code'))
+def test_notification_smtp_log_omits_delivery_exception_content(mock_mail, base_order, caplog):
+    """Falla si un error SMTP copia códigos o secretos en el log de entrega."""
+    result = NotificationService.notify_order_confirmation(base_order)
+
+    assert result is False
+    assert 'error_type=RuntimeError' in caplog.text
+    assert 'secret-code' not in caplog.text
+
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail')
+@pytest.mark.parametrize(
+    'notification_method',
+    [
+        NotificationService.notify_order_confirmation,
+        NotificationService.notify_production_started,
+        NotificationService.notify_order_shipped,
+    ],
+)
+def test_order_status_email_embeds_scoped_tracking_capability(mock_mail, base_order, notification_method):
+    """Falla si cada aviso de pedido deja un enlace sin capacidad para ese pedido."""
+    notification_method(base_order)
+    body = mock_mail.call_args.args[1]
+    token = re.search(r'#access=([^\s]+)', body).group(1)
+
+    assert f'?order={base_order.order_number}#access=' in body
+    assert signing.loads(token, salt=ORDER_ACCESS_SALT) == {'order_id': base_order.pk}
 
 
 # ---------------------------------------------------------------------------

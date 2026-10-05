@@ -1,3 +1,7 @@
+"""Review and payment API behavior."""
+
+# ruff: noqa: D100, D103
+
 import hashlib
 import json
 from unittest.mock import patch
@@ -15,6 +19,7 @@ from base_feature_app.models import (
     Review,
     WompiTransaction,
 )
+from base_feature_app.services.order_access_service import OrderAccessService
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -121,14 +126,18 @@ def existing_order(db, existing_user):
 
 
 @pytest.fixture
-def wompi_tx(db, existing_order):
-    return WompiTransaction.objects.create(
+def wompi_tx(db, existing_order, api_client):
+    transaction = WompiTransaction.objects.create(
         order=existing_order,
         reference='REF-TEST-001',
         amount_in_cents=4000000,
         status=WompiTransaction.Status.PENDING,
         checkout_url='https://checkout.wompi.co/l/test',
     )
+    api_client.credentials(
+        HTTP_X_ORDER_ACCESS=OrderAccessService.grant_access(existing_order)['order_access_token'],
+    )
+    return transaction
 
 
 @pytest.fixture
@@ -353,9 +362,11 @@ def test_payment_status_returns_200_for_valid_reference(api_client, wompi_tx):
 
 
 @pytest.mark.django_db
-def test_payment_status_returns_404_for_nonexistent_reference(api_client):
+def test_payment_status_hides_nonexistent_reference_without_capability(api_client):
+    """Falla si una referencia inexistente permite enumerar pagos."""
     response = api_client.get('/api/payment/status/REF-NO-EXISTE/')
-    assert response.status_code == 404
+    assert response.status_code == 403
+    assert response.data['code'] == 'order_access_required'
 
 
 # ---------------------------------------------------------------------------

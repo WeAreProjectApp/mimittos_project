@@ -527,35 +527,20 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 | Field | Value |
 |-------|-------|
 | **Priority** | P1 |
-| **Roles** | guest |
+| **Roles** | shared |
 | **Frontend route** | `/checkout` |
 | **API endpoints** | `POST /api/orders/` |
 
-**Preconditions:** User has at least one item in cart.
-
-**Steps:**
-
-1. User navigates to `/checkout` with items in cart.
-2. Form shows: **Nombre completo**, **Correo electrónico**, **Celular**, **Departamento** (select), **Ciudad** (select), **Código postal**, **Dirección completa**, **Notas** (optional).
-3. Payment information explains that Wompi methods are selected in the next step.
-4. Order summary shows items, subtotal, amount due now and remaining balance.
-5. User accepts terms checkbox.
-6. **Ir a pagar** button becomes enabled (requires non-empty cart + terms accepted).
-7. User clicks **Ir a pagar**.
-8. Frontend sends `POST /api/orders/` with `{ customer_name, customer_email, customer_phone, address, city, department, postal_code, notes, items[] }`.
-9. Backend creates the order and returns `{ order_number, amount_paid_now, deposit_amount, balance_amount, total_amount, is_guest }`.
-10. Frontend navigates to `/payment?order=<order_number>&amount=<amount_paid_now>` and adds `guest=1` for guest orders.
-11. The `/payment` flow owns Wompi method selection and any external redirect.
-
-**Branching conditions:**
+After valid checkout, the API returns the order number, totals, guest flag,
+`order_access_token` and `expires_at`. The browser stores access before
+navigating to payment. Later private requests send it as `X-Order-Access`.
 
 | Condition | Behavior |
 |-----------|----------|
-| Cart is empty | **Ir a pagar** button disabled |
-| Terms not accepted | **Ir a pagar** button disabled |
-| API failure | Error message from `err.response.data.detail` |
-| Button loading | Shows "Procesando..." during submission |
-| Successful guest order | Payment URL includes `guest=1` |
+| Created | Store capability, then navigate to `/payment?order=...` |
+| Inaccessible personalization | Identify the affected line, preserve cart and offer **Volver a personalizar** |
+| Reupload | Preserve product, size, color and quantity before resubmitting |
+| Other API failure | Generic error; cart retained |
 
 ---
 
@@ -671,19 +656,14 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 | Field | Value |
 |-------|-------|
 | **Priority** | P2 |
-| **Roles** | guest |
+| **Roles** | shared |
 | **Frontend route** | `/peluches/[slug]` |
-| **API endpoints** | `POST /api/media/upload/` (if image type) |
+| **API endpoints** | `POST /api/media/upload/` for image type |
 
-**Preconditions:** Peluch has `has_huella = true`.
-
-**Steps:**
-
-1. Huella section rendered with `huella_extra_cost` shown.
-2. User selects huella type: `name` | `date` | `letter` | `image`.
-3. For text types: user enters text in input.
-4. For image type: user uploads file → `mediaService.uploadImage()` → `media_id` stored.
-5. `personalization_cost` increases by `huella_extra_cost`.
+When the product supports huella, the visitor selects a type and supplies text
+or an image. Image upload returns `media_id` and `media_token`; both are stored
+on the cart line for checkout. Upload validation/server errors remain visible.
+The per-product huella cost is retained.
 
 ---
 
@@ -745,35 +725,31 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 | **Priority** | P2 |
 | **Roles** | shared |
 | **Frontend route** | `/tracking` |
-| **API endpoints** | `GET /api/orders/track/[order_number]/` |
+| **API endpoints** | `GET /api/orders/track/[order_number]/`, `POST /api/orders/[order_number]/access/request/`, `access/verify/` |
 
-**Steps:**
+1. Enter the order number and click **Buscar**.
+2. Request the private timeline with stored per-order capability or owner session.
+3. Authorized requests render the timeline and order details.
+4. Missing, invalid or expired access shows **Accede a tu pedido**, without order data.
+5. Enter the purchase email and click **Enviar código**; acknowledgement is generic.
+6. Enter the six-digit code and click **Verificar código**.
+7. Valid single-use code stores thirty-day access and reloads the timeline.
 
-1. User navigates to `/tracking`.
-2. User enters order number in input and clicks **Buscar**.
-3. Frontend fetches `GET /api/orders/track/[order_number]/`.
-4. Timeline renders with current status highlighted.
-5. If `tracking_number` available, carrier and guide shown.
+| Condition | Behavior |
+|-----------|----------|
+| Invalid/expired/used/mismatched/rate-limited code | Same generic verification error |
+| Browser storage unavailable | Access remains usable in the current page session |
+| Unrelated tracking failure | Generic tracking error |
+| Authorized | Timeline, shipping details, items and payment status render |
 
 ---
 
 ### app-tracking-wompi
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P3 |
-| **Roles** | shared |
-| **Frontend route** | `/tracking?order=PELUCH-XXXX-XXXX` |
-| **API endpoints** | `GET /api/orders/track/[order_number]/` |
-
-**Steps:**
-
-1. Wompi redirects user to `/tracking?order=PELUCH-XXXX-XXXX` after payment.
-2. Page reads `?order` query param on mount.
-3. Auto-calls `orderService.trackOrder(orderNumber)`.
-4. Timeline shown immediately without manual search.
-
----
+Tracking links use `/tracking?order=<number>#access=<token>`. The browser
+stores the token and removes the fragment with `history.replaceState` before
+recording the page view. It then automatically loads the private timeline.
+Expired or absent capabilities open the same email-code recovery flow.
 
 ---
 
@@ -785,28 +761,14 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 |-------|-------|
 | **Priority** | P1 |
 | **Roles** | shared |
-| **Frontend route** | `/payment` |
-| **API endpoints** | `GET /payment/info/{orderNumber}/`, `GET /payment/pse-banks/` |
+| **Frontend route** | `/payment?order=<number>` |
+| **API endpoints** | `GET /api/payment/info/[order_number]/`, access request/verify |
 
-**Preconditions:** Order has been created (order_number available, typically from Wompi redirect or direct navigation).
-
-**Steps:**
-
-1. User lands on `/payment` (with order_number in query params or state).
-2. Page fetches `GET /payment/info/{orderNumber}/` to load order totals and Wompi acceptance tokens.
-3. Page renders payment method tabs: **Tarjeta**, **Nequi**, **PSE**, **Bancolombia**.
-4. User selects a payment method and fills in the required fields.
-5. On submission, frontend calls the appropriate `paymentService` method (processCard, processNequi, processPse, processBancolombia).
-6. On success, frontend navigates to `/order-confirmed`.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| No order number | Redirect back to `/checkout` |
-| API error on load | Error state with retry option |
-| Payment declined | Error message with option to retry |
-| PSE selected | Additional `GET /payment/pse-banks/` call populates bank dropdown |
+Payment first loads private order totals with `X-Order-Access` or an authorized
+owner/staff session. Only then are provider acceptance tokens and payment
+methods loaded. Missing/expired access opens the shared email-code recovery
+form. Unrelated load failure retains retry; no order selected gives a cart link.
+Method-specific validation and provider failures remain visible.
 
 ---
 
@@ -816,24 +778,14 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 |-------|-------|
 | **Priority** | P1 |
 | **Roles** | shared |
-| **Frontend route** | `/order-confirmed` |
-| **API endpoints** | None (reads state or URL params) |
+| **Frontend route** | `/order-confirmed?order=<number>` |
+| **API endpoints** | `GET /api/payment/info/[order_number]/`, `GET /api/payment/check/[order_number]/` |
 
-**Preconditions:** Payment was processed successfully; order_number is available.
-
-**Steps:**
-
-1. After successful payment, frontend navigates to `/order-confirmed`.
-2. Page displays order confirmation: order_number, success message, total paid.
-3. Links to `/orders` (view my orders) and `/tracking` (track this order) shown.
-4. Cart is cleared at this point.
-
-**Branching conditions:**
-
-| Condition | Behavior |
-|-----------|----------|
-| No order info in state | Shows generic success message |
-| User clicks Track Order | Navigates to `/tracking?order={orderNumber}` |
+Private payment information must load successfully before showing its state.
+Missing/expired access opens email-code recovery; transient failure retains
+retry. The cart clears only after an authorized approved result. A URL flag
+such as `confirmed=1` cannot confirm payment or clear the cart. A later access
+denial stops further status checks and returns to recovery.
 
 ---
 
@@ -1263,6 +1215,8 @@ During step 2 of `/forgot-password` (passcode entry), the user clicks "Reenviar 
 
 ### payment-card-submit
 
+Private process sends X-Order-Access; an access denial clears the stale capability and opens email-code recovery.
+
 | Field | Value |
 |-------|-------|
 | **Priority** | P1 |
@@ -1281,6 +1235,8 @@ User selects the **Tarjeta** tab on `/payment`, fills card number (formatted), c
 
 ### payment-nequi-submit
 
+Private process sends X-Order-Access; an access denial clears the stale capability and opens email-code recovery.
+
 | Field | Value |
 |-------|-------|
 | **Priority** | P1 |
@@ -1291,6 +1247,8 @@ User selects the **Tarjeta** tab on `/payment`, fills card number (formatted), c
 User selects the **Nequi** tab on `/payment`, enters the 10-digit Colombian phone number, and submits. `paymentService.processNequi` triggers a push notification to the user's phone for approval. On success navigates to `/order-confirmed`.
 
 ### payment-pse-submit
+
+Private process sends X-Order-Access; an access denial clears the stale capability and opens email-code recovery.
 
 | Field | Value |
 |-------|-------|
@@ -1313,6 +1271,8 @@ User selects the **PSE** tab on `/payment`. The bank dropdown is populated from 
 On the **PSE** tab, when the user selects **Jurídica** (legal entity) as person type, the document-type selector is restricted to **NIT** only; selecting **Natural** offers **CC/CE**. The backend (`process_payment`, PSE branch) defensively rejects `user_type=1` with a document type other than `NIT` (HTTP 400). A legal entity in Colombia is identified by its NIT.
 
 ### payment-bancolombia-submit
+
+Private process sends X-Order-Access; an access denial clears the stale capability and opens email-code recovery.
 
 | Field | Value |
 |-------|-------|
@@ -1465,14 +1425,11 @@ Staff toggles **Activa**, edits the message (max 120 chars), and picks backgroun
 
 ### backoffice-hero-image-upload
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P3 |
-| **Roles** | staff |
-| **Frontend route** | `/backoffice/configuracion` |
-| **API endpoints** | `POST /api/content/hero-image/upload/` |
-
-Staff drops a file onto the hero-image area or selects via the file picker. After preview, clicking **Subir imagen** sends a multipart `POST /api/content/hero-image/upload/`. On success the response URL replaces the preview and the new image is the active hero on the public homepage.
+Staff selects and uploads a hero image. The backend saves the new file first,
+locks the content record, publishes its URL and deletes the former file after
+commit. Storage/database replacement failure shows an actionable error while
+the previous public hero remains usable. Invalid, oversized or corrupt files
+retain validation errors. A later cleanup failure does not undo the new image.
 
 ---
 
@@ -1670,3 +1627,41 @@ No hay estados de error o fallo propios de las preguntas locales: no hacen solic
 | Personal administrativo | `backoffice-analytics-export-csv` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | Descarga el contenido del CSV seleccionado; un error del servicio muestra el aviso existente y permite volver a exportar. |
 
 Convenciones: `@flow` desde el registro y `@outcome` inline; fixtures de red controladas en el navegador; sin condiciones que permitan aprobar cuando faltan controles o datos. Las repeticiones de anchura pertenecen al mismo flujo y no crean un módulo responsive. Los estados de error/fallo no aplicables al FAQ se justifican arriba; el fallo real del CSV se registra como `failure`.
+
+## Privacy recovery — 2026-10-02
+
+### checkout-personalization-media-recovery
+
+A rejected huella/audio reference is displayed on its exact checkout line with
+**Volver a personalizar**. Recovery opens `/peluches/[slug]?cartItem=<peluch>-<size>-<color>`,
+locks the existing product/variant/quantity and uploads the replacement. Save
+changes only personalization fields/cost and returns to checkout with the
+other cart lines intact. Upload or order failure remains visible.
+
+### app-peluch-audio
+
+Audio upload returns both `media_id` and `media_token`, preserved on the cart
+line and sent to checkout. Client-size and server-side errors remain visible.
+
+### order-access-recovery
+
+The shared component on tracking/payment/confirmation collects purchase email,
+requests a generic acknowledgement and verifies a six-digit code. Success
+stores per-order access and retries the private query. Invalid, expired,
+consumed, mismatched or rate-limited details yield the same error; network
+failure remains actionable. Denial preserves cart and hides private data.
+
+## E2E Coverage Index additions
+
+| Flow ID | Required outcomes |
+|---------|-------------------|
+| `checkout-personalization-media-recovery` | display · success · error · failure |
+| `order-access-recovery` | display · success · error · failure |
+| `tracking-by-order-number` | display · success · error · failure |
+| `tracking-auto-from-wompi` | display · success · error · failure |
+| `payment-page-display` | display · success · error · failure |
+| `order-confirmed-display` | display · success · error · failure |
+| `backoffice-hero-image-upload` | display · success · error · failure |
+
+This update rechecked the changed privacy/image flows from application code;
+it preserves unrelated gaps and does not claim the whole registry was reviewed.

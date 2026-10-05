@@ -172,7 +172,7 @@ describe('PeluchDetailPage', () => {
 
   it('shows the confirmation and an audio player after a successful upload', async () => {
     mockPeluchService.getPeluchBySlug.mockResolvedValue({ ...mockPeluchDetail, has_audio: true })
-    mockMediaService.uploadAudio.mockResolvedValue({ media_id: 7, file_url: 'http://example.com/audio/7.mp3', duration_sec: 12.3, file_size_kb: 80 })
+    mockMediaService.uploadAudio.mockResolvedValue({ media_id: 7, media_token: 'audio-capability-7', file_url: 'http://example.com/audio/7.mp3', duration_sec: 12.3, file_size_kb: 80 })
     render(<PeluchDetailPage />)
     await waitFor(() => expect(screen.getByText(/Audio personalizado/i)).toBeInTheDocument())
 
@@ -186,7 +186,7 @@ describe('PeluchDetailPage', () => {
 
   it('adds the audio cost to the price breakdown after a successful upload', async () => {
     mockPeluchService.getPeluchBySlug.mockResolvedValue({ ...mockPeluchDetail, has_audio: true })
-    mockMediaService.uploadAudio.mockResolvedValue({ media_id: 7, file_url: 'http://example.com/audio/7.mp3', duration_sec: 5, file_size_kb: 40 })
+    mockMediaService.uploadAudio.mockResolvedValue({ media_id: 7, media_token: 'audio-capability-7', file_url: 'http://example.com/audio/7.mp3', duration_sec: 5, file_size_kb: 40 })
     render(<PeluchDetailPage />)
     await waitFor(() => expect(screen.getByText(/Audio personalizado/i)).toBeInTheDocument())
 

@@ -14,8 +14,10 @@ also decides how much of Wompi's raw error is surfaced as `wompi_detail`.
 from unittest.mock import patch
 
 import pytest
+from rest_framework.test import APIClient
 
-from base_feature_app.models import Order, WompiTransaction
+from base_feature_app.models import Order, OrderStatusHistory, WompiTransaction
+from base_feature_app.services.order_access_service import OrderAccessService
 
 _PROCESS_URL = '/api/payment/process/'
 _WOMPI_CALL = 'base_feature_app.views.payment_views.WompiService.process_transaction'
@@ -44,15 +46,19 @@ def existing_order(db, existing_user):
 
 
 @pytest.fixture
-def wompi_tx(db, existing_order):
+def wompi_tx(db, existing_order, api_client):
     """Return the PENDING Wompi transaction attached to that order."""
-    return WompiTransaction.objects.create(
+    transaction = WompiTransaction.objects.create(
         order=existing_order,
         reference='REF-PAYF-001',
         amount_in_cents=4000000,
         status=WompiTransaction.Status.PENDING,
         checkout_url='https://checkout.wompi.co/l/test',
     )
+    api_client.credentials(
+        HTTP_X_ORDER_ACCESS=OrderAccessService.grant_access(existing_order)['order_access_token'],
+    )
+    return transaction
 
 
 class _FakeWompiResponse:
@@ -247,10 +253,78 @@ def test_process_payment_refuses_to_charge_an_approved_order_twice(mock_process,
 
 @pytest.mark.django_db
 @patch(_WOMPI_CALL)
-def test_process_payment_returns_404_for_unknown_order(mock_process, api_client, db):
-    """Catches: an unknown order number 500ing on DoesNotExist instead of 404ing."""
+def test_process_payment_hides_unknown_order(mock_process, api_client, db):
+    """Falla si un número desconocido revela una respuesta distinta al acceso sin prueba."""
     response = api_client.post(_PROCESS_URL, _bancolombia_payload('MMT-00000000-NOPE'), format='json')
 
-    assert response.status_code == 404
-    assert response.data['detail'] == 'Pedido no encontrado.'
+    assert response.status_code == 403
+    assert response.data['code'] == 'order_access_required'
     mock_process.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(_WOMPI_CALL)
+def test_private_payment_endpoints_deny_anonymous_request_before_gateway(mock_process, wompi_tx):
+    """Falla si una lectura o cobro privado revela el pedido antes de validar la capacidad."""
+    client = APIClient()
+    before_order = (
+        wompi_tx.order.status,
+        wompi_tx.order.total_amount,
+        wompi_tx.order.deposit_amount,
+        wompi_tx.order.balance_amount,
+    )
+    before_transaction = (
+        wompi_tx.status,
+        wompi_tx.wompi_id,
+        wompi_tx.payment_method_type,
+        wompi_tx.raw_response,
+    )
+    before_history_count = OrderStatusHistory.objects.filter(order=wompi_tx.order).count()
+    info = client.get(f'/api/payment/info/{wompi_tx.order.order_number}/')
+    check = client.get(f'/api/payment/check/{wompi_tx.order.order_number}/')
+    status = client.get(f'/api/payment/status/{wompi_tx.reference}/')
+    process = client.post(
+        _PROCESS_URL, _bancolombia_payload(wompi_tx.order.order_number), format='json',
+    )
+
+    expected = {'code': 'order_access_required', 'detail': 'Verifica tu correo para acceder a este pedido.'}
+    assert [response.status_code for response in (info, check, status, process)] == [403, 403, 403, 403]
+    assert [response.data for response in (info, check, status, process)] == [expected, expected, expected, expected]
+    wompi_tx.order.refresh_from_db()
+    wompi_tx.refresh_from_db()
+    assert (wompi_tx.order.status, wompi_tx.order.total_amount, wompi_tx.order.deposit_amount, wompi_tx.order.balance_amount) == before_order
+    assert (wompi_tx.status, wompi_tx.wompi_id, wompi_tx.payment_method_type, wompi_tx.raw_response) == before_transaction
+    assert OrderStatusHistory.objects.filter(order=wompi_tx.order).count() == before_history_count
+    mock_process.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch(_WOMPI_CALL)
+def test_private_payment_endpoints_accept_matching_capability(mock_process, api_client, wompi_tx):
+    """Falla si una capacidad válida deja de abrir la información o el cobro de su pedido."""
+    mock_process.return_value = {'status': 'PENDING', 'redirect_url': '', 'wompi_id': 'wompi-id', 'status_message': ''}
+    info = api_client.get(f'/api/payment/info/{wompi_tx.order.order_number}/')
+    check = api_client.get(f'/api/payment/check/{wompi_tx.order.order_number}/')
+    status = api_client.get(f'/api/payment/status/{wompi_tx.reference}/')
+    process = api_client.post(
+        _PROCESS_URL, _bancolombia_payload(wompi_tx.order.order_number), format='json',
+    )
+
+    assert [response.status_code for response in (info, check, status, process)] == [200, 200, 200, 200]
+    assert info.data['order_number'] == wompi_tx.order.order_number
+    assert status.data['reference'] == wompi_tx.reference
+    mock_process.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_order_access_header_is_allowed_by_payment_preflight(api_client, wompi_tx):
+    """Falla si el navegador no puede enviar la capacidad privada por CORS."""
+    response = api_client.options(
+        f'/api/payment/info/{wompi_tx.order.order_number}/',
+        HTTP_ORIGIN='http://localhost:3000',
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET',
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-order-access',
+    )
+
+    assert response.status_code == 200
+    assert 'x-order-access' in response['access-control-allow-headers'].lower()

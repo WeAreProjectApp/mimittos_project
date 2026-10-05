@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals'
+import { afterEach, describe, it, expect, beforeEach } from '@jest/globals'
 
 jest.mock('../http', () => ({
   api: {
@@ -11,14 +11,24 @@ jest.mock('../http', () => ({
 import { api } from '../http'
 import { orderService } from '../orderService'
 import { mockCartItems } from '../../__tests__/fixtures'
+import { forgetOrderAccess, storeOrderAccess } from '../../utils/orderAccess'
 
 const mockGet = api.get as jest.Mock
 const mockPost = api.post as jest.Mock
 const mockPatch = api.patch as jest.Mock
+const futureExpiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
 describe('orderService', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    localStorage.clear()
+    forgetOrderAccess('ORD-A')
+    forgetOrderAccess('ORD-001')
+  })
+
+  afterEach(() => {
+    forgetOrderAccess('ORD-A')
+    forgetOrderAccess('ORD-001')
   })
 
   describe('createOrder', () => {
@@ -52,6 +62,30 @@ describe('orderService', () => {
     })
   })
 
+  it('keeps both media capabilities in the created order payload', async () => {
+    // Fails if the checkout loses a successfully uploaded media authorization.
+    mockPost.mockResolvedValue({ data: { order_number: 'ORD-MEDIA' } })
+
+    await orderService.createOrder({
+      customer_name: 'Ana García', customer_email: 'ana@test.com', customer_phone: '3001234567',
+      address: 'Calle 1 #2-3', city: 'Medellín', department: 'Antioquia', postal_code: '050001',
+      items: [{
+        ...mockCartItems[0], quantity: 2, has_huella: true, huella_media_id: 41,
+        huella_media_token: 'huella-capability', has_audio: true, audio_media_id: 42,
+        audio_media_token: 'audio-capability',
+      }],
+    })
+
+    expect(mockPost).toHaveBeenCalledWith('/orders/', expect.objectContaining({
+      items: [{
+        peluch_id: 1, size_id: 2, color_id: 1, quantity: 2,
+        has_huella: true, huella_media_id: 41, huella_media_token: 'huella-capability',
+        has_audio: true, audio_media_id: 42, audio_media_token: 'audio-capability',
+        huella_type: '', huella_text: '', has_corazon: false, corazon_phrase: '',
+      }],
+    }))
+  })
+
   describe('getMyOrders', () => {
     it('fetches authenticated user orders', async () => {
       const mockOrders = [{ order_number: 'ORD-001', status: 'pending' }]
@@ -67,9 +101,21 @@ describe('orderService', () => {
       const mockTracking = { order_number: 'ORD-001', status: 'shipped' }
       mockGet.mockResolvedValue({ data: mockTracking })
       const result = await orderService.trackOrder('ORD-001')
-      expect(mockGet).toHaveBeenCalledWith('/orders/track/ORD-001/')
+      expect(mockGet).toHaveBeenCalledWith('/orders/track/ORD-001/', undefined)
       expect(result).toEqual(mockTracking)
     })
+  })
+
+  it('sends a tracking capability only to its matching order', async () => {
+    // Fails if one purchaser's capability authorizes a different order lookup.
+    storeOrderAccess('ORD-A', { order_access_token: 'token-a', expires_at: futureExpiry() })
+    mockGet.mockResolvedValue({ data: { order_number: 'ORD-A' } })
+
+    await orderService.trackOrder('ORD-A')
+    await orderService.trackOrder('ORD-B')
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/orders/track/ORD-A/', { headers: { 'X-Order-Access': 'token-a' } })
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/orders/track/ORD-B/', undefined)
   })
 
   describe('getOrderDetail', () => {

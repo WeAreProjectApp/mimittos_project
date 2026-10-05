@@ -38,6 +38,19 @@ describe('usePageView', () => {
     })
   })
 
+  it('removes an order access fragment before recording the page view', async () => {
+    // Fails if a bearer capability reaches analytics through a copied URL.
+    window.history.replaceState({}, '', '/payment?order=ORD-ANALYTICS#access=secret-token')
+    const replaceState = jest.spyOn(window.history, 'replaceState')
+    mockUsePathname.mockReturnValue('/payment')
+
+    renderHook(() => usePageView())
+
+    await waitFor(() => expect(mockRecordPageView).toHaveBeenCalledWith(expect.objectContaining({ url_path: '/payment' })))
+    expect(window.location.href).toBe('http://localhost/payment?order=ORD-ANALYTICS')
+    expect(replaceState.mock.invocationCallOrder[0]).toBeLessThan(mockRecordPageView.mock.invocationCallOrder[0])
+  })
+
   it('skips recording on /backoffice routes', () => {
     // quality: allow-mock-only (analytics suppression is observable only at the service boundary)
     // quality: allow-negation-only (the required outcome is the absence of a page-view call)

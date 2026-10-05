@@ -105,6 +105,7 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-currency',
+    'x-order-access',
 ]
 
 CSRF_TRUSTED_ORIGINS = config(
