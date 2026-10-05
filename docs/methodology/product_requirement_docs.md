@@ -89,6 +89,12 @@ Four customization layers per peluch order:
 - Password reset via email passcode
 - JWT tokens (stored in cookies via js-cookie)
 
+Regla de acceso aprobada el 2026-10-02: el correo verificado y la habilitación
+administrativa se mantienen separados. Recuperar contraseña o verificar correo
+nunca activa una cuenta bloqueada. Las cuentas antiguas inactivas requieren
+activación manual del equipo; el listado administrativo muestra el bloqueo,
+el correo pendiente y la cuenta habilitada como tres estados distintos.
+
 ---
 
 ## 4. Users

@@ -284,15 +284,24 @@ def cleanup_unused_media_files():
     from base_feature_app.models import PersonalizationMedia
     cutoff = timezone.now() - timedelta(hours=48)
     old_unused = PersonalizationMedia.objects.filter(is_used=False, created_at__lt=cutoff)
-    count = old_unused.count()
-    if count:
-        for media in old_unused:
-            try:
-                media.file.delete(save=False)
-            except Exception:
-                pass
-            media.delete()
-        order_logger.info('Cleaned up %d unused personalization media file(s).', count)
+    deleted = 0
+    failed = 0
+    for media in old_unused:
+        try:
+            media.file.delete(save=False)
+        except Exception:
+            # Keep the durable reference so the next scheduled run can retry.
+            failed += 1
+            continue
+        media.delete()
+        deleted += 1
+    if failed:
+        order_logger.warning(
+            'Unused personalization media cleanup incomplete: removed=%d failed=%d.',
+            deleted, failed,
+        )
+    if deleted:
+        order_logger.info('Cleaned up %d unused personalization media file(s).', deleted)
 
 
 @db_periodic_task(crontab(hour='5', minute='0'))

@@ -61,6 +61,7 @@ if ENABLE_SILK:
     INSTALLED_APPS.append('silk')
 
 AUTH_USER_MODEL = 'base_feature_app.User'
+AUTHENTICATION_BACKENDS = ['base_feature_app.authentication.VerifiedUserBackend']
 
 THUMBNAIL_ALIASES = {
     '': {
@@ -131,6 +132,7 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_AUTHENTICATION_RULE': 'base_feature_app.authentication.user_authentication_rule',
 }
 
 ROOT_URLCONF = 'base_feature_project.urls'

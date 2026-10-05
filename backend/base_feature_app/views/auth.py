@@ -9,7 +9,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth import get_user_model
+from django.db import transaction
 
+from base_feature_app.authentication import user_authentication_rule
 from base_feature_app.models import PasswordCode
 from base_feature_app.utils.auth_utils import (
     generate_auth_tokens,
@@ -52,8 +54,10 @@ def sign_up(request):
 
     existing = User.objects.filter(email=email).first()
     if existing:
-        if not existing.is_active:
-            password_code = PasswordCode.generate_code(existing)
+        if existing.is_active and not existing.email_verified:
+            password_code = PasswordCode.generate_code(
+                existing, purpose=PasswordCode.Purpose.REGISTRATION,
+            )
             send_verification_code(email, password_code.code)
             return Response(
                 {'detail': 'Ya existe una cuenta pendiente de verificación. Te reenviamos el código a tu correo.', 'email': email},
@@ -69,10 +73,13 @@ def sign_up(request):
         first_name=first_name,
         last_name=last_name,
         password=make_password(password),
-        is_active=False
+        is_active=True,
+        email_verified=False,
     )
 
-    password_code = PasswordCode.generate_code(user)
+    password_code = PasswordCode.generate_code(
+        user, purpose=PasswordCode.Purpose.REGISTRATION,
+    )
     send_verification_code(email, password_code.code)
 
     return Response(
@@ -93,31 +100,40 @@ def verify_registration(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
-        return Response(
-            {'error': 'Código inválido o expirado'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    with transaction.atomic():
+        try:
+            user = User.objects.select_for_update().get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Código inválido o expirado'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    password_code = user.password_codes.filter(code=code, used=False).first()
-    if not password_code or not password_code.is_valid():
-        return Response(
-            {'error': 'El código es inválido o ha expirado'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        if not user.is_active or user.email_verified:
+            return Response(
+                {'error': 'El código es inválido o ha expirado'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    user.is_active = True
-    user.save(update_fields=['is_active'])
+        password_code = user.password_codes.select_for_update().filter(
+            code=code, used=False, purpose=PasswordCode.Purpose.REGISTRATION,
+        ).first()
+        if not password_code or not password_code.is_valid():
+            return Response(
+                {'error': 'El código es inválido o ha expirado'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    password_code.used = True
-    password_code.save(update_fields=['used'])
+        user.email_verified = True
+        user.save(update_fields=['email_verified'])
 
-    from base_feature_app.models import Order
-    Order.objects.filter(customer_email=email, customer=None).update(customer=user)
+        password_code.used = True
+        password_code.save(update_fields=['used'])
 
-    tokens = generate_auth_tokens(user)
+        from base_feature_app.models import Order
+        Order.objects.filter(customer_email=email, customer=None).update(customer=user)
+
+        tokens = generate_auth_tokens(user)
     return Response(tokens, status=status.HTTP_200_OK)
 
 
@@ -133,14 +149,16 @@ def resend_verification(request):
         )
 
     try:
-        user = User.objects.get(email=email, is_active=False)
+        user = User.objects.get(email=email, is_active=True, email_verified=False)
     except User.DoesNotExist:
         return Response(
             {'detail': 'Si existe una cuenta pendiente, te reenviamos el código.'},
             status=status.HTTP_200_OK
         )
 
-    password_code = PasswordCode.generate_code(user)
+    password_code = PasswordCode.generate_code(
+        user, purpose=PasswordCode.Purpose.REGISTRATION,
+    )
     send_verification_code(email, password_code.code)
 
     return Response(
@@ -183,6 +201,12 @@ def sign_in(request):
         )
 
     if not user.is_active:
+        return Response(
+            {'error': 'Tu cuenta está inactiva. Contacta al equipo de MIMITTOS.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not user_authentication_rule(user):
         return Response(
             {'error': 'Tu cuenta aún no está verificada. Revisa tu correo o regístrate de nuevo para recibir un nuevo código.', 'needs_verification': True, 'email': email},
             status=status.HTTP_403_FORBIDDEN
@@ -245,34 +269,35 @@ def verify_passcode_and_reset_password(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
-        return Response(
-            {'error': 'Código inválido o expirado'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    with transaction.atomic():
+        try:
+            user = User.objects.select_for_update().get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Código inválido o expirado'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    try:
-        password_code = user.password_codes.filter(code=code, used=False).first()
-        if not password_code or not password_code.is_valid():
+        try:
+            password_code = user.password_codes.select_for_update().filter(
+                code=code, used=False, purpose=PasswordCode.Purpose.PASSWORD_RESET,
+            ).first()
+            if not password_code or not password_code.is_valid():
+                return Response(
+                    {'error': 'El código es inválido o ha expirado'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception:
             return Response(
                 {'error': 'El código es inválido o ha expirado'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
-    except Exception:
-        return Response(
-            {'error': 'El código es inválido o ha expirado'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
 
-    user.password = make_password(new_password)
-    if not user.is_active:
-        user.is_active = True
-    user.save()
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
 
-    password_code.used = True
-    password_code.save()
+        password_code.used = True
+        password_code.save(update_fields=['used'])
 
     return Response(
         {'message': 'Contraseña actualizada exitosamente'},

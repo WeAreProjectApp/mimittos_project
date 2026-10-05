@@ -293,6 +293,7 @@ export type UserListItem = {
   role: string
   is_staff: boolean
   is_active: boolean
+  email_verified: boolean
   date_joined: string
 }
 

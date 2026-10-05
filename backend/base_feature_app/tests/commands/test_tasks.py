@@ -1,10 +1,17 @@
 """Tests for Silk-related Huey tasks: silk_garbage_collection, weekly_slow_queries_report."""
 
+import logging
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from django.test import override_settings
+from django.utils import timezone
 from freezegun import freeze_time
+
+from base_feature_app.models import PersonalizationMedia
+from base_feature_app.tests.factories import PersonalizationMediaFactory
 
 
 class _FakeQS(list):
@@ -211,3 +218,57 @@ def test_weekly_slow_queries_report_includes_n_plus_one_suspects(tmp_path, monke
     content = (tmp_path / 'logs' / 'silk-reports' / 'silk-report-2025-06-09.log').read_text()
     assert '/api/sales/' in content
     assert '25 queries' in content
+
+
+@pytest.mark.django_db
+@freeze_time('2026-10-02 12:00:00')
+def test_cleanup_unused_media_keeps_failed_storage_record(caplog, monkeypatch):
+    """Falla si una caída de storage borra la referencia que permite reintentar."""
+    failed = PersonalizationMediaFactory(is_used=False)
+    successful = PersonalizationMediaFactory(is_used=False)
+    PersonalizationMedia.objects.filter(pk__in=[failed.pk, successful.pk]).update(
+        created_at=timezone.now() - timedelta(hours=49),
+    )
+    original_delete = type(failed.file).delete
+
+    def delete_with_one_failure(field_file, save=True):
+        if field_file.name == failed.file.name:
+            raise OSError('storage unavailable')
+        return original_delete(field_file, save=save)
+
+    monkeypatch.setattr(type(failed.file), 'delete', delete_with_one_failure)
+    caplog.set_level(logging.WARNING, logger='base_feature_project.tasks')
+    from base_feature_project.tasks import cleanup_unused_media_files
+
+    cleanup_unused_media_files.call_local()
+
+    log_text = '\n'.join(caplog.messages)
+    assert PersonalizationMedia.objects.filter(pk=failed.pk).exists()
+    assert not PersonalizationMedia.objects.filter(pk=successful.pk).exists()
+    assert 'removed=1 failed=1' in log_text
+    assert failed.file.name not in log_text
+    assert 'storage unavailable' not in log_text
+
+
+@pytest.mark.django_db
+@freeze_time('2026-10-02 12:00:00')
+def test_cleanup_unused_media_retries_after_storage_recovers(monkeypatch):
+    """Falla si un medio retenido tras un error no se borra en el siguiente ciclo."""
+    media = PersonalizationMediaFactory(is_used=False)
+    PersonalizationMedia.objects.filter(pk=media.pk).update(
+        created_at=timezone.now() - timedelta(hours=49),
+    )
+    original_delete = type(media.file).delete
+
+    def fail_delete(_field_file, save=True):
+        raise OSError('temporary storage outage')
+
+    monkeypatch.setattr(type(media.file), 'delete', fail_delete)
+    from base_feature_project.tasks import cleanup_unused_media_files
+
+    cleanup_unused_media_files.call_local()
+    assert PersonalizationMedia.objects.filter(pk=media.pk).exists()
+    monkeypatch.setattr(type(media.file), 'delete', original_delete)
+    cleanup_unused_media_files.call_local()
+
+    assert PersonalizationMedia.objects.filter(pk=media.pk).count() == 0

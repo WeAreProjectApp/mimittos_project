@@ -138,3 +138,27 @@ Next.js mediante un catch-all. Ver `architecture.md`.
 Los uploads viven en `backend/media/`. La validación de tipo y tamaño está en
 las vistas/utilidades de media y en `MAX_UPLOAD_IMAGE_MB` / `MAX_UPLOAD_AUDIO_MB`;
 los worktrees no deben modificar archivos de usuarios del clon principal.
+
+## Compatibilidad de verificación — 2026-10-02
+
+La migración `0014_email_verification_code_purpose` agrega `email_verified`
+con valor verdadero para cuentas existentes, conserva sus valores de
+`is_active` e invalida todos los códigos antiguos sin usar. Las cuentas antiguas
+inactivas siguen bloqueadas hasta que el staff las active manualmente. Tras el
+despliegue, los clientes con códigos anteriores deben pedir uno nuevo. Las
+cuentas nuevas del registro se crean explícitamente con correo pendiente.
+
+Revertir la migración vuelve inactivas las cuentas todavía pendientes antes de
+retirar el campo; no permite volver a utilizar los códigos invalidados. Al
+reaplicar, las cuentas bloqueadas continúan bloqueadas. El despliegue debe aplicar
+la migración antes de servir el código nuevo; esta sesión sólo prepara y prueba
+la migración en una base de test aislada.
+
+`email_verified` es de sólo lectura en serializers administrativos y Django
+admin. El backend de sesiones cambió a `VerifiedUserBackend`; las sesiones
+Django ya existentes que usaban el backend anterior deben iniciar sesión de
+nuevo. SimpleJWT 5.5.1 aplica la misma regla al refrescar un token.
+
+Las pruebas de concurrencia usan conexiones MySQL separadas en una base
+exclusiva de test. SQLite permite comprobar respuestas y persistencia, pero no
+certifica los bloqueos de fila; el test de concurrencia declara esa restricción.
