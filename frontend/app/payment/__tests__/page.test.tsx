@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { Suspense } from 'react'
 
 jest.mock('next/navigation', () => ({
-  useRouter: jest.fn(() => ({ push: jest.fn() })),
+  useRouter: jest.fn(),
   useSearchParams: jest.fn(),
 }))
 
@@ -23,11 +23,12 @@ jest.mock('@/lib/services/paymentService', () => ({
   },
 }))
 
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { paymentService } from '@/lib/services/paymentService'
 import PaymentPage from '../page'
 
 const mockUseSearchParams = useSearchParams as unknown as jest.Mock
+const mockUseRouter = useRouter as unknown as jest.Mock
 const mockGetInfo = paymentService.getInfo as jest.Mock
 const mockGetAcceptanceTokens = paymentService.getAcceptanceTokens as jest.Mock
 const mockGetPseBanks = paymentService.getPseBanks as jest.Mock
@@ -49,6 +50,7 @@ const mockPaymentInfo = {
 describe('PaymentPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockUseRouter.mockReturnValue({ push: jest.fn(), replace: jest.fn() })
     mockUseSearchParams.mockReturnValue({ get: (key: string) => key === 'order' ? 'ORD-001' : null })
     mockGetInfo.mockResolvedValue(mockPaymentInfo)
     mockGetAcceptanceTokens.mockResolvedValue({
@@ -66,9 +68,9 @@ describe('PaymentPage', () => {
     })
   })
 
-  it('renders Wompi security text', () => {
+  it('renders Wompi security text', async () => {
     render(<Suspense fallback={null}><PaymentPage /></Suspense>)
-    expect(screen.getByText(/Pago seguro · Wompi/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Pago seguro · Wompi/i)).toBeInTheDocument()
   })
 
   it('offers only NIT as document type for a legal entity in PSE', async () => {
@@ -94,5 +96,16 @@ describe('PaymentPage', () => {
     expect(screen.getByRole('option', { name: 'CC' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'CE' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'NIT' })).not.toBeInTheDocument()
+  })
+
+  it('shows recovery without loading Wompi when order access is rejected', async () => {
+    // Fails if a private payment page contacts Wompi before its order access is verified.
+    mockGetInfo.mockRejectedValue({ response: { status: 403, data: { code: 'order_access_required' } } })
+
+    render(<Suspense fallback={null}><PaymentPage /></Suspense>)
+
+    expect(await screen.findByTestId('order-access-recovery')).toBeInTheDocument()
+    // quality: allow-mock-only (there is no public UI for a Wompi bootstrap request)
+    expect(mockGetAcceptanceTokens).not.toHaveBeenCalled()
   })
 })

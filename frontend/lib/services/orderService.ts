@@ -1,4 +1,5 @@
 import { api } from './http'
+import { orderAccessConfig } from '../utils/orderAccess'
 import type {
   CartItem,
   OrderCreateResponse,
@@ -41,10 +42,12 @@ export const orderService = {
         huella_type: i.huella_type || '',
         huella_text: i.huella_text,
         huella_media_id: i.huella_media_id,
+        huella_media_token: i.huella_media_token,
         has_corazon: i.has_corazon,
         corazon_phrase: i.corazon_phrase,
         has_audio: i.has_audio,
         audio_media_id: i.audio_media_id,
+        audio_media_token: i.audio_media_token,
       })),
     }
     return api.post<OrderCreateResponse>('/orders/', payload).then((r) => r.data)
@@ -53,7 +56,7 @@ export const orderService = {
   getMyOrders: () => api.get<OrderListItem[]>('/orders/my/').then((r) => r.data),
 
   trackOrder: (orderNumber: string) =>
-    api.get<OrderTrackingInfo>(`/orders/track/${orderNumber}/`).then((r) => r.data),
+    api.get<OrderTrackingInfo>(`/orders/track/${orderNumber}/`, orderAccessConfig(orderNumber)).then((r) => r.data),
 
   getOrderDetail: (orderNumber: string) =>
     api.get<OrderDetail>(`/orders/${orderNumber}/`).then((r) => r.data),

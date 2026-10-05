@@ -11,6 +11,7 @@ from base_feature_app.serializers.order import (
     OrderTrackingSerializer, OrderStatusUpdateSerializer, OrderTrackingUpdateSerializer,
 )
 from base_feature_app.services.order_service import OrderService
+from base_feature_app.services.order_access_service import ORDER_ACCESS_ERROR, OrderAccessService
 from base_feature_app.services.notification_service import NotificationService
 from base_feature_app.utils.pagination import BoundedListPagination
 
@@ -18,7 +19,7 @@ from base_feature_app.utils.pagination import BoundedListPagination
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def create_order(request):
-    serializer = OrderCreateSerializer(data=request.data)
+    serializer = OrderCreateSerializer(data=request.data, context={'request': request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -46,6 +47,7 @@ def create_order(request):
             'balance_amount': order.balance_amount,
             'total_amount': order.total_amount,
             'is_guest': is_guest,
+            **OrderAccessService.grant_access(order),
         },
         status=status.HTTP_201_CREATED,
     )
@@ -67,7 +69,10 @@ def track_order(request, order_number: str):
             _read_items_prefetch(),
         ).get(order_number=order_number)
     except Order.DoesNotExist:
-        return Response({'detail': 'Pedido no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
+
+    if not OrderAccessService.has_access(request, order):
+        return Response(ORDER_ACCESS_ERROR, status=status.HTTP_403_FORBIDDEN)
 
     serializer = OrderTrackingSerializer(order, context={'request': request})
     return Response(serializer.data)
@@ -113,11 +118,8 @@ def order_detail_view(request, order_number: str):
     except Order.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    is_owner = request.user.is_authenticated and (
-        order.customer == request.user
-        or order.customer_email == request.user.email
-    )
-    is_admin = request.user.is_authenticated and request.user.is_staff
+    is_owner = request.user.is_authenticated and request.user.is_active and order.customer_id == request.user.pk
+    is_admin = request.user.is_authenticated and request.user.is_active and request.user.is_staff
     if not is_owner and not is_admin:
         return Response({'detail': 'No tienes permiso para ver este pedido.'}, status=status.HTTP_403_FORBIDDEN)
 

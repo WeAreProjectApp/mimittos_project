@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 
 import { orderService } from '@/lib/services/orderService'
+import OrderAccessRecovery from '@/components/orders/OrderAccessRecovery'
+import { forgetOrderAccess, isOrderAccessRequired } from '@/lib/utils/orderAccess'
 import { itemSizeLabel, itemSizeCm, itemColorName } from '@/lib/utils/orderItemDisplay'
 import type { OrderItemRead, OrderStatus, OrderTrackingInfo } from '@/lib/types'
 
@@ -93,6 +95,7 @@ function TrackingContent() {
   const [tracking, setTracking] = useState<OrderTrackingInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [recoveryOrder, setRecoveryOrder] = useState('')
   const isNewAccount = searchParams.get('new_account') === '1'
 
   // Auto-search when arriving from Wompi redirect
@@ -109,11 +112,17 @@ function TrackingContent() {
     setLoading(true)
     setError('')
     setTracking(null)
+    setRecoveryOrder('')
     try {
       const data = await orderService.trackOrder(query)
       setTracking(data)
-    } catch {
-      setError('No encontramos ningún pedido con ese número.')
+    } catch (error: unknown) {
+      if (isOrderAccessRequired(error)) {
+        forgetOrderAccess(query)
+        setRecoveryOrder(query)
+      } else {
+        setError('No pudimos consultar tu pedido. Intenta de nuevo más tarde.')
+      }
     } finally {
       setLoading(false)
     }
@@ -149,6 +158,8 @@ function TrackingContent() {
             Puedes encontrar tu número de pedido en el correo de confirmación.
           </p>
         </div>
+
+        {recoveryOrder && <OrderAccessRecovery key={recoveryOrder} orderNumber={recoveryOrder} onAccessGranted={() => handleSearch(recoveryOrder)} />}
 
         {/* New account welcome banner */}
         {isNewAccount && (

@@ -7,6 +7,8 @@ import { Suspense, useEffect, useState } from 'react'
 
 import { paymentService } from '@/lib/services/paymentService'
 import { useCartStore } from '@/lib/stores/cartStore'
+import OrderAccessRecovery from '@/components/orders/OrderAccessRecovery'
+import { forgetOrderAccess, isOrderAccessRequired } from '@/lib/utils/orderAccess'
 
 type PaymentOutcome = 'pending' | 'approved' | 'declined'
 
@@ -27,11 +29,15 @@ function OrderConfirmedContent() {
   const searchParams = useSearchParams()
   const orderNumber = searchParams.get('order') ?? ''
   const isGuest = searchParams.get('guest') === '1'
-  const customerEmail = searchParams.get('email') ?? ''
-  const startConfirmed = searchParams.get('confirmed') === '1'
+  const [customerEmail, setCustomerEmail] = useState('')
 
   const clearCart = useCartStore((s) => s.clearCart)
-  const [outcome, setOutcome] = useState<PaymentOutcome>(startConfirmed ? 'approved' : 'pending')
+  const [outcome, setOutcome] = useState<PaymentOutcome>('pending')
+  const [authorizedOrder, setAuthorizedOrder] = useState('')
+  const [accessRequired, setAccessRequired] = useState(false)
+  const [accessAttempt, setAccessAttempt] = useState(0)
+  const [accessError, setAccessError] = useState('')
+  const accessChecked = !!orderNumber && authorizedOrder === orderNumber
   const [declineReason, setDeclineReason] = useState('')
   const [methodType, setMethodType] = useState('')
   const [amountInCents, setAmountInCents] = useState(0)
@@ -41,11 +47,39 @@ function OrderConfirmedContent() {
   const isNequiPending = methodType === 'NEQUI' && outcome === 'pending'
 
   useEffect(() => {
-    if (confirmed) clearCart()
-  }, [confirmed, clearCart])
+    if (!orderNumber) return
+    let cancelled = false
+    setAuthorizedOrder('')
+    setAccessRequired(false)
+    setAccessError('')
+    setOutcome('pending')
+    setMethodType('')
+    setCustomerEmail('')
+    paymentService.getInfo(orderNumber).then((data) => {
+      if (cancelled) return
+      setCustomerEmail(data.customer_email)
+      setAmountInCents(data.amount_in_cents)
+      if (data.status === 'approved') setOutcome('approved')
+      else if (['declined', 'voided', 'error'].includes(data.status)) setOutcome('declined')
+      setAuthorizedOrder(orderNumber)
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      if (isOrderAccessRequired(error)) {
+        forgetOrderAccess(orderNumber)
+        setAccessRequired(true)
+      } else {
+        setAccessError('No pudimos consultar el pedido. Intenta de nuevo más tarde.')
+      }
+    })
+    return () => { cancelled = true }
+  }, [orderNumber, accessAttempt])
 
   useEffect(() => {
-    if (outcome !== 'pending' || !orderNumber) return
+    if (confirmed && accessChecked && !accessRequired) clearCart()
+  }, [confirmed, accessChecked, accessRequired, clearCart])
+
+  useEffect(() => {
+    if (outcome !== 'pending' || !orderNumber || !accessChecked || accessRequired) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -64,8 +98,16 @@ function OrderConfirmedContent() {
     async function check() {
       try {
         const data = await paymentService.checkStatus(orderNumber)
+        if (cancelled) return true
         return applyData(data)
-      } catch {
+      } catch (error: unknown) {
+        if (cancelled) return true
+        if (isOrderAccessRequired(error)) {
+          forgetOrderAccess(orderNumber)
+          setAuthorizedOrder('')
+          setAccessRequired(true)
+          return true
+        }
         return false
       }
     }
@@ -94,10 +136,10 @@ function OrderConfirmedContent() {
 
     timer = setTimeout(() => loop(1500), 1500)
     return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [outcome, orderNumber, methodType])
+  }, [outcome, orderNumber, methodType, accessChecked, accessRequired])
 
   useEffect(() => {
-    if (!isNequiPending) return
+    if (!isNequiPending || !accessChecked || accessRequired) return
     const start = Date.now()
     const tick = setInterval(() => {
       const elapsed = Math.floor((Date.now() - start) / 1000)
@@ -106,7 +148,14 @@ function OrderConfirmedContent() {
       if (left <= 0) clearInterval(tick)
     }, 1000)
     return () => clearInterval(tick)
-  }, [isNequiPending])
+  }, [isNequiPending, accessChecked, accessRequired])
+
+  if (accessRequired) {
+    return <main style={{ maxWidth: 520, margin: '0 auto', padding: '40px 20px' }}><OrderAccessRecovery key={orderNumber} orderNumber={orderNumber} onAccessGranted={() => setAccessAttempt((attempt) => attempt + 1)} /></main>
+  }
+  if (!accessChecked) {
+    return <main style={{ maxWidth: 520, margin: '0 auto', padding: '40px 20px' }}><p role={accessError ? 'alert' : 'status'}>{accessError || (orderNumber ? 'Consultando el pedido...' : 'Selecciona un pedido para consultar su confirmación.')}</p>{accessError && <button type="button" onClick={() => setAccessAttempt((attempt) => attempt + 1)}>Volver a intentar</button>}<Link href="/cart">Volver al carrito</Link></main>
+  }
 
   if (isNequiPending) {
     return (

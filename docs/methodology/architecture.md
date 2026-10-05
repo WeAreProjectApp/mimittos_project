@@ -103,6 +103,32 @@ interceptor HTTP gestiona el refresco y `providers.tsx` restaura el usuario.
 
 ## API por dominio
 
+### Privacidad de pedidos y archivos — 2026-10-02
+
+Los archivos de personalización se autorizan mediante el uploader autenticado
+real o una capacidad firmada para su ID/tipo. Upload devuelve `media_token`;
+el carrito la conserva y checkout la envía por línea. Un ID antiguo sin prueba
+de posesión requiere volver a subir el archivo, conservando variante y cantidad.
+
+Tracking y las rutas de estado, información, consulta y procesamiento de pago
+requieren dueño activo por `Order.customer_id`, staff activo o capacidad de ese
+pedido por treinta días en `X-Order-Access`. El detalle administrativo completo
+permanece limitado al dueño/staff. El número comercial y el correo declarado no
+autorizan una lectura. Creación devuelve acceso al pedido recién creado.
+
+`OrderAccessChallenge` es independiente de los códigos de cuenta. Las rutas
+`orders/<number>/access/request/` y `access/verify/` solicitan y consumen un
+código enviado al correo almacenado. El servicio serializa solicitudes y
+verificaciones con locks por pedido, guarda hash y presupuestos persistentes.
+La respuesta pública no revela si el número/correo existe. Checkout, tracking,
+payment y order-confirmed comparten recuperación y conservan el carrito ante
+rechazos. Correos usan `#access=`; el cliente lo guarda y retira antes de analytics.
+
+El reemplazo de hero guarda primero el archivo nuevo, bloquea `SiteContent` al
+cambiar la referencia y elimina el anterior después del commit. Fallos previos
+conservan el vigente; un fallo de limpieza posterior no revierte la nueva imagen.
+Las señales de correo/storage sólo incluyen operación y tipo de error.
+
 Todas las rutas se montan bajo `/api/`; los módulos de `base_feature_app/urls/`
 son la fuente de verdad de métodos y permisos.
 

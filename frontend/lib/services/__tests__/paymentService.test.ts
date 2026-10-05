@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals'
+import { afterEach, describe, it, expect, beforeEach } from '@jest/globals'
 
 jest.mock('../http', () => ({
   api: {
@@ -9,6 +9,7 @@ jest.mock('../http', () => ({
 
 import { api } from '../http'
 import { paymentService } from '../paymentService'
+import { forgetOrderAccess, storeOrderAccess } from '../../utils/orderAccess'
 
 const mockGet = api.get as jest.Mock
 const mockPost = api.post as jest.Mock
@@ -32,18 +33,29 @@ const mockPaymentResult = {
   redirect_url: '',
   wompi_id: 'wompi-123',
 }
+const futureExpiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+const orderGrant = { order_access_token: 'order-payment-token', expires_at: futureExpiry() }
+const orderGrantConfig = { headers: { 'X-Order-Access': 'order-payment-token' } }
 
 describe('paymentService', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    localStorage.clear()
+    forgetOrderAccess('ORD-001')
+    forgetOrderAccess('ORD-PAYMENT')
     global.fetch = jest.fn()
+  })
+
+  afterEach(() => {
+    forgetOrderAccess('ORD-001')
+    forgetOrderAccess('ORD-PAYMENT')
   })
 
   describe('getInfo', () => {
     it('fetches payment info for an order', async () => {
       mockGet.mockResolvedValue({ data: mockPaymentInfo })
       const result = await paymentService.getInfo('ORD-001')
-      expect(mockGet).toHaveBeenCalledWith('/payment/info/ORD-001/')
+      expect(mockGet).toHaveBeenCalledWith('/payment/info/ORD-001/', undefined)
       expect(result).toEqual(mockPaymentInfo)
     })
 
@@ -66,18 +78,42 @@ describe('paymentService', () => {
   describe('pollStatus', () => {
     it('polls payment info endpoint by order number', async () => {
       mockGet.mockResolvedValue({ data: mockPaymentInfo })
+      storeOrderAccess('ORD-001', orderGrant)
       const result = await paymentService.pollStatus('ORD-001')
-      expect(mockGet).toHaveBeenCalledWith('/payment/info/ORD-001/')
+      expect(mockGet).toHaveBeenCalledWith('/payment/info/ORD-001/', orderGrantConfig)
       expect(result).toEqual(mockPaymentInfo)
     })
+  })
+
+  it('scopes payment headers to the matching order', async () => {
+    // Fails if one purchaser's credential reaches a different payment order.
+    storeOrderAccess('ORD-PAYMENT', { order_access_token: 'payment-token', expires_at: futureExpiry() })
+    mockGet.mockResolvedValue({ data: mockPaymentInfo })
+
+    await paymentService.getInfo('ORD-PAYMENT')
+    await paymentService.getInfo('ORD-OTHER')
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/payment/info/ORD-PAYMENT/', { headers: { 'X-Order-Access': 'payment-token' } })
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/payment/info/ORD-OTHER/', undefined)
+  })
+
+  it('does not send order access to Wompi', async () => {
+    // Fails if an order capability leaks to the public payment provider.
+    const mockFetch = global.fetch as jest.Mock
+    mockFetch.mockResolvedValue({ json: jest.fn().mockResolvedValue({ data: {} }) })
+
+    await paymentService.getAcceptanceTokens()
+
+    expect(mockFetch).toHaveBeenCalledWith('https://sandbox.wompi.co/v1/merchants/pub_test_jest')
   })
 
   describe('checkStatus', () => {
     it('checks payment sync status for an order', async () => {
       const mockStatus = { status: 'APPROVED', synced: true }
       mockGet.mockResolvedValue({ data: mockStatus })
+      storeOrderAccess('ORD-001', orderGrant)
       const result = await paymentService.checkStatus('ORD-001')
-      expect(mockGet).toHaveBeenCalledWith('/payment/check/ORD-001/')
+      expect(mockGet).toHaveBeenCalledWith('/payment/check/ORD-001/', orderGrantConfig)
       expect(result).toEqual(mockStatus)
     })
   })
@@ -114,6 +150,7 @@ describe('paymentService', () => {
   describe('processCard', () => {
     it('posts card payment with token and acceptance data', async () => {
       mockPost.mockResolvedValue({ data: mockPaymentResult })
+      storeOrderAccess('ORD-001', orderGrant)
       const result = await paymentService.processCard('ORD-001', 'card-tok', 'acc-tok', 'personal-tok')
       expect(mockPost).toHaveBeenCalledWith('/payment/process/', {
         order_number: 'ORD-001',
@@ -122,7 +159,7 @@ describe('paymentService', () => {
         installments: 1,
         acceptance_token: 'acc-tok',
         acceptance_personal_auth_token: 'personal-tok',
-      })
+      }, orderGrantConfig)
       expect(result).toEqual(mockPaymentResult)
     })
 
@@ -137,6 +174,7 @@ describe('paymentService', () => {
   describe('processNequi', () => {
     it('posts Nequi payment with phone number', async () => {
       mockPost.mockResolvedValue({ data: mockPaymentResult })
+      storeOrderAccess('ORD-001', orderGrant)
       const result = await paymentService.processNequi('ORD-001', '3001234567', 'acc-tok', 'personal-tok')
       expect(mockPost).toHaveBeenCalledWith('/payment/process/', {
         order_number: 'ORD-001',
@@ -144,7 +182,7 @@ describe('paymentService', () => {
         phone_number: '3001234567',
         acceptance_token: 'acc-tok',
         acceptance_personal_auth_token: 'personal-tok',
-      })
+      }, orderGrantConfig)
       expect(result).toEqual(mockPaymentResult)
     })
   })
@@ -152,6 +190,7 @@ describe('paymentService', () => {
   describe('processPse', () => {
     it('posts PSE payment with bank and user legal details', async () => {
       mockPost.mockResolvedValue({ data: mockPaymentResult })
+      storeOrderAccess('ORD-001', orderGrant)
       const result = await paymentService.processPse('ORD-001', '1007', 0, 'CC', '12345678', 'acc-tok', 'personal-tok')
       expect(mockPost).toHaveBeenCalledWith('/payment/process/', {
         order_number: 'ORD-001',
@@ -162,7 +201,7 @@ describe('paymentService', () => {
         user_legal_id: '12345678',
         acceptance_token: 'acc-tok',
         acceptance_personal_auth_token: 'personal-tok',
-      })
+      }, orderGrantConfig)
       expect(result).toEqual(mockPaymentResult)
     })
   })
@@ -170,13 +209,14 @@ describe('paymentService', () => {
   describe('processBancolombia', () => {
     it('posts Bancolombia transfer payment with minimal payload (Wompi captures user_type/id at the bank)', async () => {
       mockPost.mockResolvedValue({ data: mockPaymentResult })
+      storeOrderAccess('ORD-001', orderGrant)
       await paymentService.processBancolombia('ORD-001', 'acc-tok', 'personal-tok')
       expect(mockPost).toHaveBeenCalledWith('/payment/process/', {
         order_number: 'ORD-001',
         method: 'BANCOLOMBIA_TRANSFER',
         acceptance_token: 'acc-tok',
         acceptance_personal_auth_token: 'personal-tok',
-      })
+      }, orderGrantConfig)
     })
   })
 

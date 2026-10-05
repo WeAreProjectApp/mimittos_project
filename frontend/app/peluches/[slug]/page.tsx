@@ -73,6 +73,8 @@ export default function PeluchDetailPage() {
   const { slug } = useParams() as { slug: string }
   const router = useRouter()
   const addToCart = useCartStore((s) => s.addToCart)
+  const updatePersonalization = useCartStore((s) => s.updatePersonalization)
+  const cartItems = useCartStore((s) => s.items)
   const { isAuthenticated, user } = useAuthStore()
 
   usePageView(slug)
@@ -96,11 +98,13 @@ export default function PeluchDetailPage() {
   const [activeTab, setActiveTab] = useState(0)
   const [activeImg, setActiveImg] = useState(0)
   const [addedToast, setAddedToast] = useState(false)
+  const [editingItem, setEditingItem] = useState<CartItem | null>(null)
 
   // Huella
   const [huellaType, setHuellaType] = useState<'name' | 'date' | 'letter' | 'image'>('name')
   const [huellaText, setHuellaText] = useState('')
   const [huellaMediaId, setHuellaMediaId] = useState<number | null>(null)
+  const [huellaMediaToken, setHuellaMediaToken] = useState<string | null>(null)
   const [huellaUploading, setHuellaUploading] = useState(false)
   const [huellaError, setHuellaError] = useState('')
   const huellaInputRef = useRef<HTMLInputElement>(null)
@@ -110,6 +114,7 @@ export default function PeluchDetailPage() {
 
   // Audio
   const [audioMediaId, setAudioMediaId] = useState<number | null>(null)
+  const [audioMediaToken, setAudioMediaToken] = useState<string | null>(null)
   const [audioUploading, setAudioUploading] = useState(false)
   const [audioFileName, setAudioFileName] = useState('')
   const [audioError, setAudioError] = useState('')
@@ -129,6 +134,32 @@ export default function PeluchDetailPage() {
       .catch(() => setError('No encontramos este peluche.'))
       .finally(() => setLoading(false))
   }, [slug])
+
+  useEffect(() => {
+    if (!peluch) return
+    const itemKey = new URLSearchParams(window.location.search).get('cartItem')
+    const item = cartItems.find((line) =>
+      line.peluch_slug === slug && `${line.peluch_id}-${line.size_id}-${line.color_id}` === itemKey
+    )
+    if (!item) return
+    const sizes = peluch.size_prices
+      .filter((sp) => sp.is_available)
+      .sort((a, b) => parseInt(a.size.cm, 10) - parseInt(b.size.cm, 10))
+    const sizeIndex = sizes.findIndex((sp) => sp.size.id === item.size_id)
+    const colorIndex = peluch.available_colors.findIndex((color) => color.id === item.color_id)
+    if (sizeIndex < 0 || colorIndex < 0) return
+    setEditingItem(item)
+    setActiveSizeIdx(sizeIndex)
+    setActiveColorIdx(colorIndex)
+    setQty(item.quantity)
+    setHuellaType(item.huella_type || 'name')
+    setHuellaText(item.has_huella ? item.huella_text : '')
+    setHuellaMediaId(item.has_huella ? item.huella_media_id : null)
+    setHuellaMediaToken(item.has_huella ? item.huella_media_token ?? null : null)
+    setCorazonPhrase(item.has_corazon ? item.corazon_phrase : '')
+    setAudioMediaId(item.has_audio ? item.audio_media_id : null)
+    setAudioMediaToken(item.has_audio ? item.audio_media_token ?? null : null)
+  }, [peluch, slug, cartItems])
 
   if (loading) {
     return (
@@ -196,8 +227,10 @@ export default function PeluchDetailPage() {
     try {
       const result = await mediaService.uploadImage(file)
       setHuellaMediaId(result.media_id)
+      setHuellaMediaToken(result.media_token)
     } catch (err: unknown) {
       setHuellaMediaId(null)
+      setHuellaMediaToken(null)
       setHuellaError(uploadErrorMessage(err, 'No se pudo subir la imagen. Intenta de nuevo.'))
     } finally {
       setHuellaUploading(false)
@@ -216,10 +249,12 @@ export default function PeluchDetailPage() {
     try {
       const result = await mediaService.uploadAudio(file)
       setAudioMediaId(result.media_id)
+      setAudioMediaToken(result.media_token)
       setAudioMeta({ url: result.file_url, durationSec: result.duration_sec, sizeKb: result.file_size_kb })
     } catch (err: unknown) {
       setAudioFileName('')
       setAudioMediaId(null)
+      setAudioMediaToken(null)
       setAudioMeta(null)
       setAudioError(uploadErrorMessage(err, 'No se pudo subir el audio. Intenta de nuevo.'))
     } finally {
@@ -247,16 +282,23 @@ export default function PeluchDetailPage() {
       huella_type: userHasHuella ? huellaType : '',
       huella_text: userHasHuella && huellaType !== 'image' ? huellaText : '',
       huella_media_id: userHasHuella && huellaType === 'image' ? huellaMediaId : null,
+      huella_media_token: userHasHuella && huellaType === 'image' ? huellaMediaToken : null,
       has_corazon: userHasCorazon,
       corazon_phrase: userHasCorazon ? corazonPhrase : '',
       has_audio: userHasAudio,
       audio_media_id: userHasAudio ? audioMediaId : null,
+      audio_media_token: userHasAudio ? audioMediaToken : null,
       deposit_percentage: activeSizePrice.deposit_percentage ?? 50,
       full_payment_discount_pct: activeSizePrice.full_payment_discount_pct ?? 0,
       free_shipping: activeSizePrice.free_shipping ?? false,
       shipping_cost: activeSizePrice.shipping_cost ?? 0,
     }
 
+    if (editingItem) {
+      updatePersonalization(cartItem)
+      router.push('/checkout')
+      return
+    }
     addToCart(cartItem)
     setAddedToast(true)
     setTimeout(() => setAddedToast(false), 2500)
@@ -386,8 +428,8 @@ export default function PeluchDetailPage() {
                 {availableSizes.map((sp, i) => (
                   <div
                     key={sp.id}
-                    onClick={() => setActiveSizeIdx(i)}
-                    style={{ border: `1.5px solid ${i === activeSizeIdx ? 'var(--coral)' : 'rgba(27,42,74,.08)'}`, padding: '14px 10px', borderRadius: 14, background: i === activeSizeIdx ? 'var(--pink-melo)' : '#fff', textAlign: 'center', cursor: 'pointer', transition: 'all .2s' }}
+                    onClick={() => { if (!editingItem) setActiveSizeIdx(i) }}
+                    style={{ border: `1.5px solid ${i === activeSizeIdx ? 'var(--coral)' : 'rgba(27,42,74,.08)'}`, padding: '14px 10px', borderRadius: 14, background: i === activeSizeIdx ? 'var(--pink-melo)' : '#fff', textAlign: 'center', cursor: editingItem ? 'default' : 'pointer', transition: 'all .2s' }}
                   >
                     <div style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--navy)', marginBottom: 2 }}>{sp.size.label}</div>
                     <div style={{ fontSize: 11, color: i === activeSizeIdx ? 'var(--terracotta)' : 'var(--gray-warm)', fontWeight: i === activeSizeIdx ? 700 : 400 }}>
@@ -413,7 +455,7 @@ export default function PeluchDetailPage() {
               </div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 {peluch.available_colors.map((c, i) => (
-                  <div key={c.id} onClick={() => { setActiveColorIdx(i); setActiveImg(0) }} style={{ width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', transition: 'transform .2s', transform: i === activeColorIdx ? 'translateY(-2px)' : 'none' }}>
+                  <div key={c.id} onClick={() => { if (!editingItem) { setActiveColorIdx(i); setActiveImg(0) } }} style={{ width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: editingItem ? 'default' : 'pointer', transition: 'transform .2s', transform: i === activeColorIdx ? 'translateY(-2px)' : 'none' }}>
                     <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: '50%', background: c.hex_code, border: '3px solid #fff', boxShadow: i === activeColorIdx ? '0 0 0 2.5px var(--coral)' : '0 0 0 1.5px rgba(27,42,74,.1)', transition: 'box-shadow .2s' }} />
                     <span style={{ width: '100%', textAlign: 'center', fontSize: 11, color: i === activeColorIdx ? 'var(--terracotta)' : 'var(--gray-warm)', fontWeight: 600, marginTop: 6 }}>{c.name}</span>
                   </div>
@@ -426,6 +468,7 @@ export default function PeluchDetailPage() {
           {(peluch.has_huella || peluch.has_corazon || peluch.has_audio) && (
             <div style={{ background: 'var(--cream-peach)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 22 }}>
               <div style={{ ...configLblStyle, marginBottom: 14 }}>Personalización</div>
+              {editingItem && <p style={{ fontSize: 13, color: 'var(--navy)', marginBottom: 14 }}>Vuelve a subir los archivos necesarios y guarda la personalización. Conservaremos los productos y las cantidades de tu carrito.</p>}
 
               {/* Huella */}
               {peluch.has_huella && (
@@ -544,17 +587,17 @@ export default function PeluchDetailPage() {
           {/* Qty + Add */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: 4 }}>
-              <button onClick={() => setQty(Math.max(1, qty - 1))} style={{ width: 36, height: 36, borderRadius: 8, color: 'var(--navy)', fontSize: 18, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>−</button>
+              <button disabled={!!editingItem} onClick={() => setQty(Math.max(1, qty - 1))} style={{ width: 36, height: 36, borderRadius: 8, color: 'var(--navy)', fontSize: 18, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>−</button>
               <span style={{ width: 40, textAlign: 'center', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 16, color: 'var(--navy)' }}>{qty}</span>
-              <button onClick={() => setQty(qty + 1)} style={{ width: 36, height: 36, borderRadius: 8, color: 'var(--navy)', fontSize: 18, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
+              <button disabled={!!editingItem} onClick={() => setQty(qty + 1)} style={{ width: 36, height: 36, borderRadius: 8, color: 'var(--navy)', fontSize: 18, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
             </div>
             <button
               onClick={handleAdd}
-              disabled={!activeSizePrice || !activeColor}
+              disabled={!activeSizePrice || !activeColor || huellaUploading || audioUploading}
               style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--coral)', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: '0 8px 22px rgba(212,132,138,.35)', transition: 'all .2s', border: 'none', cursor: 'pointer', padding: '0 24px' }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>
-              Agregar · {fmt(total)}
+              {editingItem ? 'Guardar personalización' : `Agregar · ${fmt(total)}`}
             </button>
           </div>
 

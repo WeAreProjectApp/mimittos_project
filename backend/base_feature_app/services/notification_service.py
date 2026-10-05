@@ -6,6 +6,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 
 from base_feature_app.models import Order
+from base_feature_app.services.order_access_service import OrderAccessService
 from base_feature_app.utils.email_renderer import render_email_html
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ class NotificationService:
         has_account = User.objects.filter(email=order.customer_email).exists()
 
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
-        tracking_url = f'{frontend_url}/tracking?order={order.order_number}'
+        tracking_url = OrderAccessService.tracking_url(order)
         register_url = f'{frontend_url}/auth/register'
 
         subject = f'¡Tu pedido {order.order_number} está confirmado! 🧸'
@@ -102,11 +103,13 @@ class NotificationService:
         if not _can_send_automated_email(order):
             return False
         subject = f'Tu peluche {order.order_number} está en producción 🐻'
+        tracking_url = OrderAccessService.tracking_url(order)
         body = (
             f'Hola {order.customer_name},\n\n'
             f'¡Buenas noticias! Tu pedido {order.order_number} ya está en manos de nuestros artesanos.\n'
             f'Tiempo estimado de producción: 4-6 días hábiles.\n\n'
-            f'Te avisamos cuando lo despachemos. 💛'
+            f'Te avisamos cuando lo despachemos. 💛\n\n'
+            f'Seguimiento de tu pedido:\n{tracking_url}'
         )
         html = render_email_html(
             heading='Tu peluche está en producción',
@@ -119,6 +122,7 @@ class NotificationService:
                 {'label': 'Número de pedido', 'value': order.order_number},
                 {'label': 'Tiempo estimado', 'value': '4 a 6 días hábiles'},
             ],
+            cta={'text': 'Ver seguimiento', 'url': tracking_url},
             footer_note='Te enviaremos otro correo cuando lo despachemos.',
             preheader=f'Pedido {order.order_number} en producción.',
             subject=subject,
@@ -130,6 +134,7 @@ class NotificationService:
         if not _can_send_automated_email(order):
             return False
         subject = f'Tu peluche {order.order_number} está en camino 🚚'
+        tracking_url = OrderAccessService.tracking_url(order)
         tracking_info = (
             f'Guía: {order.tracking_number} — {order.shipping_carrier}'
             if order.tracking_number else 'La guía estará disponible pronto.'
@@ -139,7 +144,8 @@ class NotificationService:
             f'Tu pedido {order.order_number} ya fue despachado.\n'
             f'{tracking_info}\n\n'
             f'Recuerda que al recibir el pedido pagarás el saldo: ${order.balance_amount:,} COP.\n\n'
-            f'¡Pronto lo tendrás en tus manos!'
+            f'¡Pronto lo tendrás en tus manos!\n\n'
+            f'Seguimiento de tu pedido:\n{tracking_url}'
         )
         details = [
             {'label': 'Número de pedido', 'value': order.order_number},
@@ -159,6 +165,7 @@ class NotificationService:
                 ),
             ],
             details=details,
+            cta={'text': 'Ver seguimiento', 'url': tracking_url},
             preheader=f'Pedido {order.order_number} despachado.',
             subject=subject,
         )
@@ -263,5 +270,5 @@ class NotificationService:
             _mark_email_sent(order)
             return True
         except Exception as exc:
-            logger.error('Email send error: %s', exc)
+            logger.warning('automated order email delivery failed (error_type=%s)', type(exc).__name__)
             return False
