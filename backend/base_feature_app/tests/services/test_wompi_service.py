@@ -280,6 +280,38 @@ def test_process_event_repetition_sends_one_confirmation(wompi_tx, mailoutbox, d
     assert sorted(message.to[0] for message in mailoutbox) == ['admin@example.com', wompi_tx.order.customer_email]
 
 
+@pytest.mark.django_db(transaction=True)
+@override_settings(
+    ADMIN_EMAIL='admin@example.com',
+    EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend',
+    EMAIL_HOST='smtp.example.invalid',
+    EMAIL_PORT=587,
+    EMAIL_HOST_USER='',
+    EMAIL_HOST_PASSWORD='',
+    EMAIL_USE_TLS=True,
+    EMAIL_USE_SSL=False,
+    EMAIL_TIMEOUT=10,
+    DEFAULT_FROM_EMAIL='orders@example.com',
+)
+def test_approval_retains_settlement_after_smtp_timeout(wompi_tx):
+    """Fail if post-commit SMTP failure damages the confirmed payment settlement."""
+    event = _make_event_data('test', reference=wompi_tx.reference)
+
+    with patch('smtplib.SMTP') as smtp:
+        smtp.return_value.sendmail.side_effect = TimeoutError('SMTP timed out')
+        WompiService.process_event(event)
+        WompiService.process_event(event)
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert list(wompi_tx.order.status_history.values_list('previous_status', 'new_status')) == [
+        (Order.Status.PENDING_PAYMENT, Order.Status.PAYMENT_CONFIRMED),
+    ]
+    assert wompi_tx.order.last_automated_email_at is None
+    assert smtp.return_value.sendmail.call_count == 2
+
+
 @pytest.mark.django_db
 @override_settings(ADMIN_EMAIL='admin@example.com')
 def test_payment_history_failure_can_be_retried(wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
