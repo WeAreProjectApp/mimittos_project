@@ -5,6 +5,36 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Ronda transversal por frentes — 2026-10-08
+
+La ronda `improvement-20261008-orchestrated-r2` trabaja en ramas y worktrees
+separados por frente. El operador autorizó hasta tres mejoras por frente y
+la integración exclusiva de esta ronda mediante merge-queue.
+
+Seguridad elimina el correo de las reseñas públicas, identifica la propia con
+`is_mine`, reserva las lecturas de ventas a staff y neutraliza fórmulas en los
+textos del CSV. Mantenibilidad conserva categorías cuando falla una imagen,
+hace atómicas las escrituras anidadas de peluches y alinea el redondeo al par
+del frontend con el cobro del servidor. Rendimiento precarga las relaciones
+de la respuesta después de modificar un pedido.
+
+La configuración compartida limita SMTP a diez segundos por defecto mediante
+`DJANGO_EMAIL_TIMEOUT`. El job MySQL ejecuta diez escenarios de concurrencia
+que expanden doce casos; exige motor MySQL, ejecución completa y cero skips.
+QA reemplaza las pruebas inoperantes del carrito y retiene una respuesta HTTP
+para comprobar bloqueo y recuperación del checkout.
+
+Responsividad corrige el breakpoint administrativo tras reproducir el sidebar
+fijo a 835 px. La aceptación requiere la matriz canónica de cinco anchos,
+rotación y una QA combinada sobre el commit limpio. Pruebas, artefactos,
+calificaciones y estado de entrega se registran en el reporte del toolkit:
+`docs/audits/2026-10-08-mimittos_project-improvement-pass-project-improvement-20261008-orchestrated-r2.md`.
+
+Continúan fuera del alcance el contrato de redirección bancaria, una outbox
+durable de correo, cambios de rotación JWT sin diagnóstico completo y mejoras
+de teclado/foco del drawer. El PATCH de precios anidados incompletos conserva
+un fallo preexistente; el formulario actual envía los campos completos.
+
 ## Integridad de cuentas, pagos y personalizaciones — 2026-10-08
 
 La ronda orquestada `improvement-20261008-orquestada` seleccionó tres causas:

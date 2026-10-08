@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.5
-**Last Updated:** 2026-10-02
+**Version:** 1.5.6
+**Last Updated:** 2026-10-08
 
 ---
 
@@ -57,6 +57,7 @@ Use this document to understand each flow's steps, branching conditions, role re
 | `payment-page-display` | Payment Page | payment | P1 | shared | `/payment` |
 | `order-confirmed-display` | Order Confirmed | payment | P1 | shared | `/order-confirmed` |
 | `review-submit` | Submit Review | reviews | P2 | user | `/peluches/[slug]` |
+| `backoffice-navigation` | Responsive Backoffice Navigation | backoffice | P3 | staff | `/backoffice`, `/backoffice/pedidos` |
 | `backoffice-login` | Staff Sign-In | backoffice | P2 | staff | `/sign-in` |
 | `backoffice-dashboard-display` | Backoffice Dashboard | backoffice | P2 | staff | `/backoffice` |
 | `backoffice-order-management` | Order Management | backoffice | P2 | staff | `/backoffice/pedidos` |
@@ -480,8 +481,8 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 **Steps:**
 
 1. User navigates to `/cart`.
-2. Cart displays each item: image, title, size/color, quantity input, **Eliminar** button, line total.
-3. **Update quantity:** User changes the number input → `cartStore.updateQuantity(key, qty)`.
+2. Cart displays each item: image, title, size/color, decrement/increment controls, **Eliminar** button, and line total.
+3. **Update quantity:** User clicks **+** or **−**; `cartStore.updateQuantity(key, qty)` recalculates the line and subtotal.
 4. **Remove item:** User clicks **Eliminar** → `cartStore.removeFromCart(key)`.
 5. **Subtotal** recalculates: `sum of (unit_price + personalization_cost) * quantity` per item.
 
@@ -491,7 +492,7 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 |-----------|----------|
 | Cart is empty | "Tu carrito está vacío." message |
 | Single item removed | If last item, shows empty cart message |
-| Quantity set to 0 or negative | Minimum enforced by `min={1}` on input |
+| User decrements quantity at one | Quantity remains one; removal uses the separate **Eliminar** control |
 
 ---
 
@@ -790,6 +791,27 @@ denial stops further status checks and returns to recovery.
 ---
 
 ## Reviews Module
+
+### review-display
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Roles** | shared |
+| **Frontend route** | `/peluches/[slug]` |
+| **API endpoints** | `GET /api/peluches/{slug}/reviews/` |
+
+1. The visitor enters a peluch detail through the catalog.
+2. The page loads approved public reviews and displays each reviewer name, rating, and comment.
+3. A guest can read the reviews and receives **Iniciar sesión** instead of submission controls.
+4. For an authenticated visitor, `is_mine` marks an existing own review; the page keeps that review visible and hides the duplicate submission form.
+
+| Condition | Behavior |
+|-----------|----------|
+| No approved reviews | No review cards are rendered. |
+| Guest visitor | Public reviews remain visible and the page offers **Iniciar sesión**. |
+| `is_mine` review | Existing own review remains visible; **Deja tu reseña** and **Publicar reseña** are absent. |
+| Authenticated visitor without an own review | The submission path belongs to `review-submit`. |
 
 ### review-submit
 
@@ -1665,3 +1687,45 @@ failure remains actionable. Denial preserves cart and hides private data.
 
 This update rechecked the changed privacy/image flows from application code;
 it preserves unrelated gaps and does not claim the whole registry was reviewed.
+
+## Flows rechecked in version 1.5.6 (2026-10-08)
+
+### Cart controls
+
+`cart-update-qty` uses the visible +/− buttons. Increment and decrement update
+the exact subtotal; decrement at one leaves the line present. Removal uses
+the separate Eliminar button. Reload preserves the changed quantity.
+`cart-multiple-products` requires exactly the two selected product titles and
+their combined subtotal. The old gaps about nonexistent quantity inputs and
+cart-item selectors are removed because the replacement specs use real controls.
+
+### Checkout pricing and pending submission
+
+Product, cart and checkout show the same nearest-even hundred-peso rounding
+as the server. A 50.100 COP product at 50 % yields a 25.000 COP deposit, which
+is also the order's amount when navigating to payment.
+`purchase-loading-state` holds a real HTTP response boundary: while pending,
+Procesando... is disabled. A 502 response shows its error, preserves the cart,
+enables submit and allows a second request. Existing success/error outcomes
+remain declared; this test covers display/failure.
+
+### Review ownership
+
+Public reviews omit the author's email. The authenticated request receives
+`is_mine` for its own review, which suppresses the review form. A guest sees
+the sign-in prompt; an authenticated visitor viewing someone else's review
+can submit and sees the moderation acknowledgement. The delivered-order
+requirement and backend duplicate protection remain in force.
+
+### backoffice-navigation
+
+Staff sees a drawer below 1024 px and a fixed 220 px sidebar at larger widths.
+The drawer opens through Abrir menú, exposes the six administrative links and
+closes after navigating to Pedidos or tapping outside. The order list must
+display the expected order and customer. Content uses the full width with a
+closed drawer, and rotation portrait → landscape → portrait preserves usable
+navigation without a residual overlay.
+
+Acceptance uses 412×915, 835×1194, 1195×835, 1440×900 and 2560×1440 plus rotation.
+This flow does not certify Escape handling, focus return or touch-target size;
+those accessibility obligations remain open outside the approved change.

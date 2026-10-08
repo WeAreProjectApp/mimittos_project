@@ -1,6 +1,6 @@
 {
-  "version": "1.5.5",
-  "lastUpdated": "2026-10-02",
+  "version": "1.5.6",
+  "lastUpdated": "2026-10-08",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -261,13 +261,10 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User updates the quantity input for a cart item",
+      "description": "User changes a cart item's quantity with the increment/decrement buttons; the minimum is one and the subtotal reflects the exact quantity. Removal uses its separate control.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
-      ],
-      "knownGaps": [
-        "Both existing CART_UPDATE_QTY tests target markup that does not exist in frontend/app/cart/page.tsx: test 1 ('should update peluch quantity in cart', frontend/e2e/app/cart.spec.ts:53-82) looks for `input[type=\"number\"]` — the cart page has no such input, only a +/- button pair with a plain <span>{item.quantity}</span> (page.tsx:203-206) — so the guarded `if (isVisible())` block never runs and the test does nothing beyond navigation. Test 2 ('...decremented to zero', cart.spec.ts:169-204) looks for `[data-testid=\"cart-item\"]`, which was never present in this file in any commit (git log -S confirms). Neither test has ever exercised updateQuantity()."
       ]
     },
     "cart-remove": {
@@ -316,13 +313,10 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User adds two different products; both appear in checkout cart",
+      "description": "User adds two different products; the cart displays exactly those two product titles and their combined subtotal.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
-      ],
-      "knownGaps": [
-        "Existing test ('should add multiple different peluches', frontend/e2e/app/cart.spec.ts:206-237) ends on `expect(itemCount).toBeGreaterThanOrEqual(1)` where itemCount comes from `[data-testid=\"cart-item\"]`, a selector that does not exist anywhere in frontend/app/cart/page.tsx (confirmed via grep + git log -S, same as cart-update-qty) — itemCount is always 0, so this assertion should fail whenever the catalog has >=2 seeded peluches (which ci.yml's seed step provides)."
       ]
     },
     "checkout-form-display": {
@@ -410,7 +404,7 @@
         "shared"
       ],
       "priority": "P3",
-      "description": "Submit button triggers loading/navigation state after click",
+      "description": "A pending checkout request disables the submit button and displays Procesando...; a rejected response displays its error, preserves the cart and enables another submission.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -687,6 +681,19 @@
         "failure"
       ]
     },
+    "review-display": {
+      "name": "Display peluch reviews",
+      "module": "reviews",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P2",
+      "description": "Visitor reaches a peluch detail through the catalog and sees approved public reviews. A guest receives an Iniciar sesión prompt instead of submission controls; an authenticated visitor whose GET response marks a review is_mine sees that review without another submission form.",
+      "expectedSpecs": 2,
+      "outcomes": [
+        "display"
+      ]
+    },
     "review-submit": {
       "name": "Submit peluch review",
       "module": "reviews",
@@ -694,11 +701,24 @@
         "user"
       ],
       "priority": "P2",
-      "description": "Authenticated user with a delivered order fills rating and comment on peluch detail and submits POST /api/peluches/{slug}/reviews/",
+      "description": "Authenticated user with a delivered order fills rating and comment on peluch detail and submits POST /api/peluches/{slug}/reviews/. Public reviews omit author email; is_mine identifies the current user's own review.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
         "error"
+      ]
+    },
+    "backoffice-navigation": {
+      "name": "Navigate backoffice across viewport sizes",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P3",
+      "description": "Staff opens the drawer below 1024 px or uses the fixed sidebar at larger widths, navigates to the order list, dismisses the drawer outside its links and preserves usable navigation after rotation.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "success"
       ]
     },
     "backoffice-login": {
