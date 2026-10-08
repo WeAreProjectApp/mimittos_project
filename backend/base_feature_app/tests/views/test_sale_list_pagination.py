@@ -44,7 +44,8 @@ def test_sales_list_rejects_anonymous_reader(api_client):
 @pytest.mark.django_db
 def test_sales_list_rejects_authenticated_customer(authenticated_client):
     """Reject a customer's attempt to read another buyer's sale."""
-    sale = _sales(1, prefix='customer-access')[0]
+    _sales(1, prefix='customer-access')
+    sale = Sale.objects.get(email='customer-access-0@example.com')
 
     response = authenticated_client.get(reverse('sale-list'))
 

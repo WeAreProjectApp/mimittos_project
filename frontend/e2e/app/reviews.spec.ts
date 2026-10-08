@@ -2,6 +2,7 @@ import { test, expect } from '../test-with-coverage';
 import type { Page, Route } from '@playwright/test';
 import { REVIEW_SUBMIT } from '../helpers/flow-tags';
 
+const REVIEW_DISPLAY = ['@flow:review-display', '@module:reviews', '@priority:P2'];
 const TEST_SLUG = 'test-peluch';
 const review = {
   id: 1, is_mine: false, user_name: 'Ana', rating: 5,
@@ -64,7 +65,7 @@ async function setupProduct(page: Page, isMine: boolean) {
 }
 
 test('an owned review hides the submission form',
-  { tag: [...REVIEW_SUBMIT, '@outcome:display'] },
+  { tag: [...REVIEW_DISPLAY, '@outcome:display'] },
   async ({ page }) => {
     await setupAuth(page);
     await setupProduct(page, true);
@@ -80,7 +81,7 @@ test('an owned review hides the submission form',
 );
 
 test('a guest can read public reviews',
-  { tag: [...REVIEW_SUBMIT, '@outcome:display'] },
+  { tag: [...REVIEW_DISPLAY, '@outcome:display'] },
   async ({ page }) => {
     await setupProduct(page, false);
 
@@ -89,7 +90,7 @@ test('a guest can read public reviews',
     await expect(page).toHaveURL(`/peluches/${TEST_SLUG}`);
 
     await expect(page.getByText('Un recuerdo muy especial')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Iniciar sesión', exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Iniciar sesión', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Publicar reseña' })).toHaveCount(0);
   },
 );
