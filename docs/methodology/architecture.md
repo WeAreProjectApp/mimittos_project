@@ -5,7 +5,41 @@ description: Arquitectura de Mimittos verificada contra rutas, imports, modelos 
 
 # Arquitectura — Mimittos
 
-Revisión: 2026-09-25.
+Revisión: 2026-10-08.
+
+## Integridad y orden de bloqueos
+
+Los códigos de cuenta tienen un presupuesto persistente por usuario y
+propósito en `PasswordCodeAttemptBudget`: cinco fallos y cinco envíos por hora,
+con sesenta segundos entre envíos. Generación y consumo bloquean primero el
+usuario y después el presupuesto; ese orden también serializa su primera
+creación. Reenviar invalida códigos anteriores del mismo propósito y conserva
+los contadores. La vigencia sigue siendo de quince minutos.
+
+Los escritores de pagos usan `WompiService.apply_transaction_data`: bloquean
+primero `Order` y después `WompiTransaction`. Pago, pedido e historial se
+guardan en la misma transacción; los callbacks de notificación se programan
+con `transaction.on_commit`. Una primera aprobación válida de cualquiera de
+los intentos confirma la referencia, mientras los eventos pendientes de
+intentos anteriores conservan el estado actual. Una aprobación consolidada
+y el progreso administrativo se preservan ante respuestas atrasadas.
+`OrderService.update_status` relee el pedido bloqueado antes de decidir una
+transición. Consulta y conciliación siguen este mismo contrato.
+
+Checkout y limpieza de personalizaciones bloquean las mismas filas de medios
+en orden de clave primaria. La compra relee los medios antes de crear el
+pedido; la limpieza comprueba uso y ambas relaciones antes del borrado.
+Si un medio ya desapareció, se solicita volver a subirlo sin pedido parcial;
+si falla el almacenamiento al borrar, la fila se conserva para reintento.
+
+Las carreras se prueban con MySQL scratch y conexiones independientes.
+SQLite no acredita el comportamiento de `select_for_update`. En pruebas
+transaccionales de notificaciones deben ejecutarse los callbacks del commit;
+no sustituir los servicios de pedido o historial para comprobar integridad.
+
+Referencias: `models/password_code.py`, `services/order_service.py`,
+`services/wompi_service.py`, `views/payment_views.py` y
+`base_feature_project/tasks.py`. Ronda: `improvement-20261008-orquestada`.
 
 ## Componentes del sistema
 
