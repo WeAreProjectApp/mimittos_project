@@ -1,20 +1,19 @@
 """Verify authentication and account recovery API behavior."""
 
 from datetime import timedelta
-from threading import Barrier, Thread
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import close_old_connections, connection
+from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 from rest_framework import status
-from rest_framework.test import APIClient
 
 from base_feature_app.models import PasswordCode
 from base_feature_app.models.password_code import PasswordCodeAttemptBudget
+from base_feature_app.tests.views.test_account_code_limits import _parallel_posts
 from base_feature_app.views import auth as auth_views
 
 
@@ -404,7 +403,7 @@ def test_verify_passcode_rejects_registration_code(api_client):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('send_route,verify_route,purpose', [
+@pytest.mark.parametrize(('send_route', 'verify_route', 'purpose'), [
     ('send_passcode', 'verify_passcode_reset', PasswordCode.Purpose.PASSWORD_RESET),
     ('resend_verification', 'verify_registration', PasswordCode.Purpose.REGISTRATION),
 ])
@@ -534,7 +533,7 @@ def test_validate_token_success(api_client):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='requires MySQL row locks')
-def test_verify_registration_consumes_code_once_under_mysql_locking():
+def test_verify_registration_consumes_code_once_under_mysql_locking(record_testsuite_property):
     """Falla si dos solicitudes MySQL verifican y canjean el mismo código."""
     User = get_user_model()
     user = User.objects.create_user(
@@ -543,34 +542,17 @@ def test_verify_registration_consumes_code_once_under_mysql_locking():
     PasswordCode.objects.create(
         user=user, code='888888', purpose=PasswordCode.Purpose.REGISTRATION,
     )
-    barrier = Barrier(2)
-    statuses = []
+    results, lock_wait = _parallel_posts('verify_registration', {
+        'email': user.email, 'code': '888888',
+    })
 
-    def submit_verification():
-        close_old_connections()
-        client = APIClient()
-        barrier.wait()
-        response = client.post(
-            reverse('verify_registration'),
-            {'email': user.email, 'code': '888888'},
-            format='json',
-        )
-        statuses.append(response.status_code)
-        close_old_connections()
-
-    first = Thread(target=submit_verification)
-    second = Thread(target=submit_verification)
-    first.start()
-    second.start()
-    first.join(timeout=10)
-    second.join(timeout=10)
-
-    assert not first.is_alive()
-    assert not second.is_alive()
-    assert sorted(statuses) == [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+    assert len({connection_id for connection_id, _ in results}) == 2
+    assert lock_wait == (results[1][0], results[0][0])
+    assert sorted(result_status for _, result_status in results) == [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
     user.refresh_from_db()
     assert user.email_verified is True
     assert PasswordCode.objects.get(user=user, code='888888').used is True
     assert PasswordCodeAttemptBudget.objects.filter(
         user=user, purpose=PasswordCode.Purpose.REGISTRATION,
     ).count() == 1
+    record_testsuite_property('consumption-lock-wait-registration', str(lock_wait))

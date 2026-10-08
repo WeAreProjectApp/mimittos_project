@@ -3,6 +3,7 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from time import monotonic
 from unittest.mock import Mock
 
 import pytest
@@ -30,6 +31,7 @@ VERIFY_CASES = [
 
 @pytest.fixture
 def pending_account():
+    """Create an active account whose email still needs verification."""
     return get_user_model().objects.create_user(
         email='limits@example.com', password='Initial123!', email_verified=False,
     )
@@ -60,29 +62,73 @@ def _verify_code(client, account, route, code):
     }, format='json')
 
 
-def _parallel_posts(route, payload):
-    """Use independently opened MySQL connections for simultaneous HTTP calls."""
-    start = threading.Barrier(2)
+def _observe_lock_wait(waiter_id, blocker_id):
+    """Observe the real InnoDB wait between these two scratch connections."""
+    deadline = monotonic() + 10
+    with connection.cursor() as cursor:
+        while monotonic() < deadline:
+            cursor.execute(
+                'SELECT waiter.PROCESSLIST_ID, blocker.PROCESSLIST_ID '
+                'FROM performance_schema.data_lock_waits AS waits '
+                'JOIN performance_schema.threads AS waiter '
+                'ON waiter.THREAD_ID = waits.REQUESTING_THREAD_ID '
+                'JOIN performance_schema.threads AS blocker '
+                'ON blocker.THREAD_ID = waits.BLOCKING_THREAD_ID '
+                'WHERE waiter.PROCESSLIST_ID = %s AND blocker.PROCESSLIST_ID = %s',
+                [waiter_id, blocker_id],
+            )
+            observed = cursor.fetchone()
+            if observed is not None:
+                return observed
+    raise AssertionError('The second scratch connection never waited for the first row lock.')
 
-    def post():
+
+def _parallel_posts(route, payload):
+    """Hold the first real row lock until MySQL observes the second request waiting."""
+    first_locked = threading.Event()
+    second_at_lock = threading.Event()
+    release_first = threading.Event()
+    connection_ids = {}
+    user_table = get_user_model()._meta.db_table
+
+    def post(role):
         close_old_connections()
         try:
-            with connection.cursor() as cursor:
-                cursor.execute('SELECT CONNECTION_ID()')
-                connection_id = cursor.fetchone()[0]
-            start.wait(timeout=10)
-            response = APIClient().post(reverse(route), payload, format='json')
-            return connection_id, response.status_code
+            def checkpoint(execute, sql, params, many, context):
+                is_account_lock = f'FROM `{user_table}`' in sql and 'FOR UPDATE' in sql.upper()
+                if not is_account_lock:
+                    return execute(sql, params, many, context)
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT CONNECTION_ID()')
+                    connection_ids[role] = cursor.fetchone()[0]
+                if role == 'second':
+                    second_at_lock.set()
+                    return execute(sql, params, many, context)
+                result = execute(sql, params, many, context)
+                first_locked.set()
+                assert release_first.wait(timeout=30), 'The controller did not release the first SQL lock.'
+                return result
+
+            with connection.execute_wrapper(checkpoint):
+                response = APIClient().post(reverse(route), payload, format='json')
+            return connection_ids[role], response.status_code
         finally:
             connections.close_all()
 
     with ThreadPoolExecutor(max_workers=2) as workers:
-        futures = [workers.submit(post) for _ in range(2)]
-        return [future.result(timeout=15) for future in futures]
+        first = workers.submit(post, 'first')
+        try:
+            assert first_locked.wait(timeout=10), 'The first request did not acquire its account row lock.'
+            second = workers.submit(post, 'second')
+            assert second_at_lock.wait(timeout=10), 'The second request did not reach the contended SQL.'
+            lock_wait = _observe_lock_wait(connection_ids['second'], connection_ids['first'])
+        finally:
+            release_first.set()
+        return [first.result(timeout=15), second.result(timeout=15)], lock_wait
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,purpose', SEND_CASES)
+@pytest.mark.parametrize(('route', 'purpose'), SEND_CASES)
 def test_code_request_enforces_send_cooldown(api_client, pending_account, mailoutbox, captcha_provider,
                                            route, purpose):
     """Repeated requests must not create another usable code or email."""
@@ -103,7 +149,7 @@ def test_code_request_enforces_send_cooldown(api_client, pending_account, mailou
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,purpose', SEND_CASES)
+@pytest.mark.parametrize(('route', 'purpose'), SEND_CASES)
 def test_code_request_enforces_hourly_send_budget(api_client, pending_account, mailoutbox,
                                                 captcha_provider, route, purpose):
     """A minute between sends must not bypass the hourly account limit."""
@@ -127,7 +173,7 @@ def test_code_request_enforces_hourly_send_budget(api_client, pending_account, m
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES)
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES)
 def test_code_verification_enforces_failure_budget(api_client, pending_account, route, send_route,
                                                  purpose):
     """Exhausted guesses must reject even the correct code without changing the account."""
@@ -149,7 +195,7 @@ def test_code_verification_enforces_failure_budget(api_client, pending_account, 
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES)
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES)
 def test_code_verification_accepts_last_permitted_attempt(api_client, pending_account, route,
                                                         send_route, purpose):
     """The fifth attempt must still consume a valid code after four failures."""
@@ -167,7 +213,7 @@ def test_code_verification_accepts_last_permitted_attempt(api_client, pending_ac
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES)
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES)
 def test_resend_preserves_failure_budget(api_client, pending_account, mailoutbox, route, send_route,
                                        purpose):
     """Resending must not give an account a fresh set of guesses."""
@@ -194,7 +240,7 @@ def test_resend_preserves_failure_budget(api_client, pending_account, mailoutbox
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,purpose', SEND_CASES)
+@pytest.mark.parametrize(('route', 'purpose'), SEND_CASES)
 def test_exhausted_failure_budget_blocks_sending(api_client, pending_account, mailoutbox,
                                                captcha_provider, route, purpose):
     """Each sending alias must honor exhausted verification attempts."""
@@ -211,7 +257,7 @@ def test_exhausted_failure_budget_blocks_sending(api_client, pending_account, ma
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES)
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES)
 def test_expired_failure_window_allows_new_code(api_client, pending_account, mailoutbox, route,
                                               send_route, purpose):
     """An elapsed hour must restore account recovery without extending old codes."""
@@ -237,7 +283,7 @@ def test_expired_failure_window_allows_new_code(api_client, pending_account, mai
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('route,purpose', SEND_CASES)
+@pytest.mark.parametrize(('route', 'purpose'), SEND_CASES)
 def test_expired_send_window_allows_new_email(api_client, pending_account, mailoutbox,
                                             captcha_provider, route, purpose):
     """The send budget must recover at its hourly boundary."""
@@ -316,52 +362,60 @@ def test_failure_budget_preserves_other_account_access(api_client, pending_accou
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='Row-lock verification requires MySQL.')
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES[:1])
-def test_concurrent_verification_consumes_one_code(pending_account, route, send_route, purpose):
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES[:1])
+def test_concurrent_verification_consumes_one_code(pending_account, record_testsuite_property,
+                                                 route, send_route, purpose):
     """Two independent connections must not consume the same code successfully."""
     code = PasswordCode.objects.create(user=pending_account, purpose=purpose, code='654321')
     payload = {'email': pending_account.email, 'code': code.code, 'new_password': 'Replacement123!'}
 
-    results = _parallel_posts(route, payload)
+    results, lock_wait = _parallel_posts(route, payload)
 
     code.refresh_from_db()
     assert len({connection_id for connection_id, _ in results}) == 2
+    assert lock_wait == (results[1][0], results[0][0])
     assert sorted(status for _, status in results) == [200, 400]
     assert code.used is True
     assert PasswordCodeAttemptBudget.objects.filter(user=pending_account, purpose=purpose).count() == 1
+    record_testsuite_property(f'consumption-lock-wait-{purpose}', str(lock_wait))
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='Row-lock verification requires MySQL.')
-@pytest.mark.parametrize('route,purpose', SEND_CASES[:2])
-def test_concurrent_requests_create_one_code(pending_account, mailoutbox, route, purpose):
+@pytest.mark.parametrize(('route', 'purpose'), SEND_CASES[:2])
+def test_concurrent_requests_create_one_code(pending_account, mailoutbox, record_testsuite_property,
+                                           route, purpose):
     """Simultaneous first requests must share one persistent sending budget."""
-
-    results = _parallel_posts(route, {'email': pending_account.email})
+    results, lock_wait = _parallel_posts(route, {'email': pending_account.email})
 
     budget = PasswordCodeAttemptBudget.objects.get(user=pending_account, purpose=purpose)
     assert len({connection_id for connection_id, _ in results}) == 2
+    assert lock_wait == (results[1][0], results[0][0])
     assert sorted(status for _, status in results) == [200, 429]
     assert budget.send_count == 1
     assert PasswordCode.objects.filter(user=pending_account, purpose=purpose).count() == 1
     assert len(mailoutbox) == 1
+    record_testsuite_property(f'sending-lock-wait-{purpose}', str(lock_wait))
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='Row-lock verification requires MySQL.')
-@pytest.mark.parametrize('route,send_route,purpose', VERIFY_CASES)
-def test_concurrent_failures_stop_at_budget(api_client, pending_account, route, send_route, purpose):
+@pytest.mark.parametrize(('route', 'send_route', 'purpose'), VERIFY_CASES)
+def test_concurrent_failures_stop_at_budget(api_client, pending_account, record_testsuite_property,
+                                          route, send_route, purpose):
     """Concurrent guesses must not overwrite or exceed the remaining attempt."""
     code = PasswordCode.objects.create(user=pending_account, purpose=purpose, code='654321')
     failures = [_verify_code(api_client, pending_account, route, '000000').status_code for _ in range(4)]
     payload = {'email': pending_account.email, 'code': '000000', 'new_password': 'Replacement123!'}
 
-    results = _parallel_posts(route, payload)
+    results, lock_wait = _parallel_posts(route, payload)
 
     code.refresh_from_db()
     budget = PasswordCodeAttemptBudget.objects.get(user=pending_account, purpose=purpose)
     assert failures == [400] * 4
     assert len({connection_id for connection_id, _ in results}) == 2
+    assert lock_wait == (results[1][0], results[0][0])
     assert sorted(status for _, status in results) == [400, 429]
     assert budget.failed_attempts == 5
     assert code.used is False
+    record_testsuite_property(f'attempt-lock-wait-{purpose}', str(lock_wait))

@@ -1,3 +1,5 @@
+"""Verify account-code generation, replacement and expiration."""
+
 import random
 from datetime import timedelta
 
@@ -11,6 +13,7 @@ from base_feature_app.models import PasswordCode
 
 @pytest.mark.django_db
 def test_password_code_str_representation():
+    """Show the owner email and code in the model's display label."""
     User = get_user_model()
     user = User.objects.create_user(email='code@example.com', password='pass1234')
     password_code = PasswordCode.objects.create(user=user, code='123456')
@@ -20,6 +23,7 @@ def test_password_code_str_representation():
 
 @pytest.mark.django_db
 def test_password_code_generate_code_creates_six_digits(monkeypatch):
+    """Generate a six-digit code for the account."""
     User = get_user_model()
     user = User.objects.create_user(email='generate@example.com', password='pass1234')
 
@@ -32,6 +36,7 @@ def test_password_code_generate_code_creates_six_digits(monkeypatch):
 
 @pytest.mark.django_db
 def test_password_code_is_valid_false_when_used():
+    """Reject a code that has already been consumed."""
     User = get_user_model()
     user = User.objects.create_user(email='used@example.com', password='pass1234')
     password_code = PasswordCode.objects.create(user=user, code='654321', used=True)
@@ -42,6 +47,7 @@ def test_password_code_is_valid_false_when_used():
 @pytest.mark.django_db
 @freeze_time('2026-01-15 10:00:00')
 def test_password_code_is_valid_false_when_expired():
+    """Reject a code older than fifteen minutes."""
     User = get_user_model()
     user = User.objects.create_user(email='expired@example.com', password='pass1234')
     password_code = PasswordCode.objects.create(user=user, code='654321')
@@ -55,6 +61,7 @@ def test_password_code_is_valid_false_when_expired():
 
 @pytest.mark.django_db
 def test_password_code_is_valid_true_for_recent_code():
+    """Accept an unused code within its lifetime."""
     User = get_user_model()
     user = User.objects.create_user(email='valid@example.com', password='pass1234')
     password_code = PasswordCode.objects.create(user=user, code='654321')
@@ -82,7 +89,7 @@ def test_password_code_resend_invalidates_previous_code(monkeypatch, purpose):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('purpose,other_purpose', [
+@pytest.mark.parametrize(('purpose', 'other_purpose'), [
     (PasswordCode.Purpose.REGISTRATION, PasswordCode.Purpose.PASSWORD_RESET),
     (PasswordCode.Purpose.PASSWORD_RESET, PasswordCode.Purpose.REGISTRATION),
 ])
