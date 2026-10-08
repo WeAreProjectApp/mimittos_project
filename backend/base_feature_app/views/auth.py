@@ -3,26 +3,31 @@ Authentication views for user sign up, sign in, and password management.
 """
 import logging
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from base_feature_app.authentication import user_authentication_rule
 from base_feature_app.models import PasswordCode
+from base_feature_app.models.password_code import PasswordCodeAttemptBudget
 from base_feature_app.utils.auth_utils import (
     generate_auth_tokens,
     send_password_reset_code,
-    send_verification_code
+    send_verification_code,
 )
 from base_feature_app.views.captcha_views import verify_recaptcha
 
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+CODE_LIMIT_ERROR = {
+    'error': 'Has alcanzado el límite de intentos o envíos. Inténtalo de nuevo más tarde.',
+}
 
 
 @api_view(['POST'])
@@ -58,6 +63,8 @@ def sign_up(request):
             password_code = PasswordCode.generate_code(
                 existing, purpose=PasswordCode.Purpose.REGISTRATION,
             )
+            if password_code is None:
+                return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
             send_verification_code(email, password_code.code)
             return Response(
                 {'detail': 'Ya existe una cuenta pendiente de verificación. Te reenviamos el código a tu correo.', 'email': email},
@@ -80,6 +87,8 @@ def sign_up(request):
     password_code = PasswordCode.generate_code(
         user, purpose=PasswordCode.Purpose.REGISTRATION,
     )
+    if password_code is None:
+        return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
     send_verification_code(email, password_code.code)
 
     return Response(
@@ -115,10 +124,15 @@ def verify_registration(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        budget = PasswordCodeAttemptBudget.lock_for_user(user, PasswordCode.Purpose.REGISTRATION)
+        if not budget.can_verify():
+            return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
         password_code = user.password_codes.select_for_update().filter(
             code=code, used=False, purpose=PasswordCode.Purpose.REGISTRATION,
         ).first()
         if not password_code or not password_code.is_valid():
+            budget.record_failure()
             return Response(
                 {'error': 'El código es inválido o ha expirado'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -159,6 +173,8 @@ def resend_verification(request):
     password_code = PasswordCode.generate_code(
         user, purpose=PasswordCode.Purpose.REGISTRATION,
     )
+    if password_code is None:
+        return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
     send_verification_code(email, password_code.code)
 
     return Response(
@@ -236,6 +252,8 @@ def send_passcode(request):
         )
 
     password_code = PasswordCode.generate_code(user)
+    if password_code is None:
+        return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
     success = send_password_reset_code(user, password_code.code)
 
     if not success:
@@ -278,11 +296,16 @@ def verify_passcode_and_reset_password(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        budget = PasswordCodeAttemptBudget.lock_for_user(user, PasswordCode.Purpose.PASSWORD_RESET)
+        if not budget.can_verify():
+            return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
         try:
             password_code = user.password_codes.select_for_update().filter(
                 code=code, used=False, purpose=PasswordCode.Purpose.PASSWORD_RESET,
             ).first()
             if not password_code or not password_code.is_valid():
+                budget.record_failure()
                 return Response(
                     {'error': 'El código es inválido o ha expirado'},
                     status=status.HTTP_400_BAD_REQUEST,

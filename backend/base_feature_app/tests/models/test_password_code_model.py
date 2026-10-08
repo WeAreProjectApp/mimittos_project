@@ -60,3 +60,39 @@ def test_password_code_is_valid_true_for_recent_code():
     password_code = PasswordCode.objects.create(user=user, code='654321')
 
     assert password_code.is_valid() is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('purpose', PasswordCode.Purpose.values)
+def test_password_code_resend_invalidates_previous_code(monkeypatch, purpose):
+    """A new code must retire the preceding code for the same purpose."""
+    user = get_user_model().objects.create_user(email='resend@example.com', password='pass1234')
+    with freeze_time('2026-01-15 10:00:00') as clock:
+        monkeypatch.setattr(random, 'randint', lambda *_: 1)
+        previous = PasswordCode.generate_code(user, purpose=purpose)
+        clock.tick(delta=timedelta(seconds=60))
+        monkeypatch.setattr(random, 'randint', lambda *_: 2)
+
+        current = PasswordCode.generate_code(user, purpose=purpose)
+
+        previous.refresh_from_db()
+        assert previous.is_valid() is False
+        assert current.is_valid() is True
+        assert current.code == '222222'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('purpose,other_purpose', [
+    (PasswordCode.Purpose.REGISTRATION, PasswordCode.Purpose.PASSWORD_RESET),
+    (PasswordCode.Purpose.PASSWORD_RESET, PasswordCode.Purpose.REGISTRATION),
+])
+def test_password_code_generation_preserves_other_purpose(purpose, other_purpose):
+    """Resending one purpose must leave the other purpose's code valid."""
+    user = get_user_model().objects.create_user(email='separate@example.com', password='pass1234')
+    other_code = PasswordCode.objects.create(user=user, code='654321', purpose=other_purpose)
+
+    generated = PasswordCode.generate_code(user, purpose=purpose)
+
+    other_code.refresh_from_db()
+    assert other_code.is_valid() is True
+    assert generated.is_valid() is True
