@@ -19,17 +19,25 @@ test.describe('Checkout Flow', () => {
         size_prices: [{ id: 1, size: { id: 1, label: 'Mini', slug: 'mini', cm: '10cm', sort_order: 0 }, price: 50100, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
         view_count: 0, huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0,
       }
+      await page.route(/\/api\/peluches\/(?:\?.*)?$/, (route) => route.fulfill({ json: [product] }))
+      await page.route('**/api/categories/', (route) => route.fulfill({ json: [] }))
+      await page.route('**/api/sizes/', (route) => route.fulfill({ json: [product.size_prices[0].size] }))
       await page.route('**/api/peluches/rounding-bear/', (route) => route.fulfill({ json: product }))
+      // Detail loads product and reviews together; both responses must exist.
+      await page.route('**/api/peluches/rounding-bear/reviews/', (route) => route.fulfill({ json: [] }))
       await page.route('**/api/orders/', (route) => route.fulfill({ status: 201, json: {
         order_number: 'MMT-ROUNDING', total_amount: 50100, deposit_amount: 25000,
         balance_amount: 25100, shipping_amount: 0, discount_amount: 0,
         payment_mode: 'deposit', amount_paid_now: 25000, is_guest: true,
       } }))
 
-      await page.goto('/peluches/rounding-bear')
+      await page.goto('/catalog')
+      await page.getByRole('link', { name: /Rounding bear/ }).click()
       await expect(page.getByText('Pagas $25.000 hoy vía Wompi', { exact: true })).toBeVisible()
       await page.getByRole('button', { name: 'Agregar · $50.100', exact: true }).click()
-      await page.goto('/checkout')
+      await page.getByRole('link', { name: 'Carrito', exact: true }).click()
+      await expect(page.getByRole('main').getByText('$25.000', { exact: true })).toBeVisible()
+      await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click()
       await expect(page.getByText('Pagar anticipo', { exact: true }).locator('..')).toContainText('$25.000')
       await page.getByLabel('Nombre completo').fill('Ana López')
       await page.getByLabel('Correo electrónico').fill('ana@example.com')
