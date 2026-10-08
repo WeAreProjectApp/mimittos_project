@@ -1,9 +1,11 @@
 import hashlib
 import hmac
 import logging
+from functools import partial
 
 import requests
 from django.conf import settings
+from django.db import transaction
 
 from base_feature_app.models import WompiTransaction, Order
 
@@ -25,6 +27,74 @@ def _normalize_phone_e164_co(raw: str) -> str:
 
 
 class WompiService:
+    @staticmethod
+    @transaction.atomic
+    def apply_transaction_data(reference: str, data: dict, *, cancel_failed: bool = False,
+                               notes: str = '', allow_new_attempt: bool = False,
+                               status_override: str | None = None) -> WompiTransaction:
+        """Apply provider data using the same lock order as administrative updates."""
+        from base_feature_app.services.order_service import OrderService
+        from base_feature_app.services.notification_service import NotificationService
+
+        order_id = WompiTransaction.objects.values_list('order_id', flat=True).get(reference=reference)
+        order = Order.objects.select_for_update().get(pk=order_id)
+        tx = WompiTransaction.objects.select_for_update().get(reference=reference)
+        tx.order = order
+
+        raw_status = (status_override or data.get('status') or '').lower()
+        new_status = raw_status if raw_status in WompiTransaction.Status.values else WompiTransaction.Status.PENDING
+        provider_id = data.get('id') or tx.wompi_id
+        new_attempt = allow_new_attempt and provider_id != tx.wompi_id
+
+        # A response from an earlier request must not undo an approval or a
+        # newer attempt. A fresh, explicitly initiated attempt may become pending.
+        if tx.status == WompiTransaction.Status.APPROVED and new_status != tx.status:
+            return tx
+        if tx.status == WompiTransaction.Status.APPROVED and provider_id != tx.wompi_id:
+            return tx
+        if tx.wompi_id and provider_id != tx.wompi_id and not allow_new_attempt:
+            return tx
+        if tx.status != WompiTransaction.Status.PENDING and new_status == WompiTransaction.Status.PENDING and not new_attempt:
+            return tx
+
+        tx.wompi_id = provider_id
+        tx.status = new_status
+        tx.payment_method_type = data.get('payment_method_type') or tx.payment_method_type
+        tx.raw_response = data
+        tx.save(update_fields=['wompi_id', 'status', 'payment_method_type', 'raw_response', 'updated_at'])
+
+        if order.status == Order.Status.PENDING_PAYMENT:
+            if new_status == WompiTransaction.Status.APPROVED:
+                order = OrderService.update_status(order, Order.Status.PAYMENT_CONFIRMED, notes=notes)
+                tx.order = order
+                transaction.on_commit(partial(NotificationService.notify_new_order_admin, order), robust=True)
+            elif cancel_failed and new_status in (
+                WompiTransaction.Status.DECLINED, WompiTransaction.Status.VOIDED, WompiTransaction.Status.ERROR,
+            ):
+                tx.order = OrderService.update_status(order, Order.Status.CANCELLED, notes=notes)
+        return tx
+
+    @staticmethod
+    @transaction.atomic
+    def cancel_abandoned_order(reference: str, *, notes: str, without_provider_id: bool = False,
+                               expected_provider_id: str | None = None) -> bool:
+        """Recheck a reconciliation decision after obtaining the current rows."""
+        from base_feature_app.services.order_service import OrderService
+
+        order_id = WompiTransaction.objects.values_list('order_id', flat=True).get(reference=reference)
+        order = Order.objects.select_for_update().get(pk=order_id)
+        tx = WompiTransaction.objects.select_for_update().get(reference=reference)
+        if order.status != Order.Status.PENDING_PAYMENT or tx.status == WompiTransaction.Status.APPROVED:
+            return False
+        if without_provider_id and tx.wompi_id:
+            return False
+        if not without_provider_id and tx.status != WompiTransaction.Status.PENDING:
+            return False
+        if expected_provider_id is not None and tx.wompi_id != expected_provider_id:
+            return False
+        OrderService.update_status(order, Order.Status.CANCELLED, notes=notes)
+        return True
+
     @staticmethod
     def _api_url() -> str:
         return getattr(settings, 'WOMPI_API_URL', 'https://production.wompi.co/v1')
@@ -159,13 +229,6 @@ class WompiService:
             tx.reference, data.get('id', ''), data.get('status', ''),
         )
 
-        status_map = {
-            'APPROVED': WompiTransaction.Status.APPROVED,
-            'DECLINED': WompiTransaction.Status.DECLINED,
-            'VOIDED': WompiTransaction.Status.VOIDED,
-            'ERROR': WompiTransaction.Status.ERROR,
-        }
-
         def _extract_redirect(payload: dict) -> str:
             pm = payload.get('payment_method') or {}
             if not isinstance(pm, dict):
@@ -175,14 +238,12 @@ class WompiService:
 
         wompi_status_raw = (data.get('status') or 'ERROR').upper()
         status_message = data.get('status_message') or ''
-        new_status = status_map.get(wompi_status_raw, WompiTransaction.Status.PENDING)
         redirect_url = _extract_redirect(data)
-
-        tx.wompi_id = data.get('id', '')
-        tx.status = new_status
-        tx.payment_method_type = data.get('payment_method_type', method_data.get('type', ''))
-        tx.raw_response = data
-        tx.save(update_fields=['wompi_id', 'status', 'payment_method_type', 'raw_response', 'updated_at'])
+        data.setdefault('payment_method_type', method_data.get('type', ''))
+        tx = WompiService.apply_transaction_data(
+            tx.reference, data, allow_new_attempt=True, status_override=wompi_status_raw,
+        )
+        wompi_status_raw = tx.status.upper()
 
         needs_async_url = method_type in ('PSE', 'BANCOLOMBIA_TRANSFER')
         should_poll = bool(tx.wompi_id) and needs_async_url and not redirect_url
@@ -208,10 +269,8 @@ class WompiService:
                     wompi_status_raw = fresh_status or wompi_status_raw
                     redirect_url = fresh_url
                     status_message = fresh_msg or status_message
-                    new_status = status_map.get(wompi_status_raw, WompiTransaction.Status.PENDING)
-                    tx.status = new_status
-                    tx.raw_response = fresh
-                    tx.save(update_fields=['status', 'raw_response', 'updated_at'])
+                    tx = WompiService.apply_transaction_data(tx.reference, fresh)
+                    wompi_status_raw = tx.status.upper()
                 if wompi_status_raw in ('APPROVED', 'DECLINED', 'VOIDED', 'ERROR'):
                     logger.debug(
                         'Wompi terminal status during poll ref=%s status=%s after %s polls',
@@ -234,19 +293,12 @@ class WompiService:
         if needs_async_url and not redirect_url and wompi_status_raw != 'APPROVED':
             wompi_status_raw = 'ERROR'
             status_message = status_message or 'No se generó URL de redirección. Intenta con otro método de pago.'
-            tx.status = WompiTransaction.Status.ERROR
-            tx.save(update_fields=['status', 'updated_at'])
+            tx = WompiService.apply_transaction_data(tx.reference, data, status_override='ERROR')
+            wompi_status_raw = tx.status.upper()
             logger.warning(
                 'Treating ref=%s as ERROR: %s requires async_payment_url but Wompi never returned one',
                 tx.reference, method_type,
             )
-
-        if new_status == WompiTransaction.Status.APPROVED:
-            from base_feature_app.services.order_service import OrderService
-            from base_feature_app.services.notification_service import NotificationService
-            if order.status == Order.Status.PENDING_PAYMENT:
-                OrderService.update_status(order, Order.Status.PAYMENT_CONFIRMED)
-                NotificationService.notify_new_order_admin(order)
 
         return {
             'status': wompi_status_raw,
@@ -381,8 +433,6 @@ class WompiService:
 
     @staticmethod
     def process_event(event_data: dict) -> None:
-        from base_feature_app.services.order_service import OrderService
-
         event_type = event_data.get('event')
         if event_type != 'transaction.updated':
             return
@@ -391,29 +441,7 @@ class WompiService:
         reference = data.get('reference', '')
 
         try:
-            wompi_tx = WompiTransaction.objects.select_related('order').get(reference=reference)
+            WompiService.apply_transaction_data(reference, data)
         except WompiTransaction.DoesNotExist:
             logger.warning('WompiTransaction not found for reference: %s', reference)
             return
-
-        wompi_status = data.get('status', '').lower()
-        status_map = {
-            'approved': WompiTransaction.Status.APPROVED,
-            'declined': WompiTransaction.Status.DECLINED,
-            'voided': WompiTransaction.Status.VOIDED,
-            'error': WompiTransaction.Status.ERROR,
-        }
-        new_wompi_status = status_map.get(wompi_status, WompiTransaction.Status.PENDING)
-
-        wompi_tx.wompi_id = data.get('id', '')
-        wompi_tx.status = new_wompi_status
-        wompi_tx.payment_method_type = data.get('payment_method_type', '')
-        wompi_tx.raw_response = data
-        wompi_tx.save(update_fields=['wompi_id', 'status', 'payment_method_type', 'raw_response', 'updated_at'])
-
-        if new_wompi_status == WompiTransaction.Status.APPROVED:
-            order = wompi_tx.order
-            if order.status == Order.Status.PENDING_PAYMENT:
-                OrderService.update_status(order, Order.Status.PAYMENT_CONFIRMED)
-                from base_feature_app.services.notification_service import NotificationService
-                NotificationService.notify_new_order_admin(order)

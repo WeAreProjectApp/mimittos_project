@@ -10,8 +10,8 @@ from django.test import override_settings
 from django.utils import timezone
 from freezegun import freeze_time
 
-from base_feature_app.models import PersonalizationMedia
-from base_feature_app.tests.factories import PersonalizationMediaFactory
+from base_feature_app.models import Order, PersonalizationMedia, WompiTransaction
+from base_feature_app.tests.factories import PersonalizationMediaFactory, WompiTransactionFactory
 
 
 class _FakeQS(list):
@@ -272,3 +272,67 @@ def test_cleanup_unused_media_retries_after_storage_recovers(monkeypatch):
     cleanup_unused_media_files.call_local()
 
     assert PersonalizationMedia.objects.filter(pk=media.pk).count() == 0
+
+
+@pytest.fixture
+def pending_reconciliation_payment(db):
+    tx = WompiTransactionFactory(wompi_id='current-id', status=WompiTransaction.Status.PENDING)
+    Order.objects.filter(pk=tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    WompiTransaction.objects.filter(pk=tx.pk).update(created_at=timezone.now() - timedelta(hours=25))
+    tx.refresh_from_db()
+    return tx
+
+
+@pytest.mark.django_db
+def test_reconciliation_preserves_a_concurrent_approval(pending_reconciliation_payment):
+    from base_feature_app.services.wompi_service import WompiService
+    from base_feature_project.tasks import reconcile_pending_payments
+    tx = pending_reconciliation_payment
+    approved = {'id': tx.wompi_id, 'reference': tx.reference, 'status': 'APPROVED'}
+
+    def provider_reply(*args, **kwargs):
+        WompiService.process_event({'event': 'transaction.updated', 'data': {'transaction': approved}})
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': tx.wompi_id, 'status': 'PENDING'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        reconcile_pending_payments.call_local()
+
+    tx.refresh_from_db()
+    assert tx.status == WompiTransaction.Status.APPROVED
+    assert tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+def test_reconciliation_preserves_administrative_progress(pending_reconciliation_payment):
+    from base_feature_app.services.order_service import OrderService
+    from base_feature_project.tasks import reconcile_pending_payments
+    tx = pending_reconciliation_payment
+
+    def provider_reply(*args, **kwargs):
+        OrderService.update_status(tx.order, Order.Status.IN_PRODUCTION)
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': tx.wompi_id, 'status': 'DECLINED'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        reconcile_pending_payments.call_local()
+
+    tx.order.refresh_from_db()
+    assert tx.order.status == Order.Status.IN_PRODUCTION
+    assert not tx.order.status_history.filter(new_status=Order.Status.CANCELLED).exists()
+
+
+@pytest.mark.django_db
+def test_reconciliation_cancels_abandoned_errors_without_a_provider_id(pending_reconciliation_payment):
+    from base_feature_project.tasks import reconcile_pending_payments
+    tx = pending_reconciliation_payment
+    WompiTransaction.objects.filter(pk=tx.pk).update(wompi_id='', status=WompiTransaction.Status.ERROR)
+
+    reconcile_pending_payments.call_local()
+
+    tx.order.refresh_from_db()
+    assert tx.order.status == Order.Status.CANCELLED
+    assert tx.order.status_history.get().new_status == Order.Status.CANCELLED

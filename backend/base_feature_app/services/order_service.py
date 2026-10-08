@@ -1,4 +1,5 @@
 import uuid
+from functools import partial
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
@@ -177,10 +178,16 @@ class OrderService:
         return order
 
     @staticmethod
+    @transaction.atomic
     def update_status(order: Order, new_status: str, changed_by=None, notes: str = '') -> Order:
         from base_feature_app.services.notification_service import NotificationService
 
+        # Callers may have loaded the order before a provider request or an
+        # administrative change. Serialize against the current persisted row.
+        order = Order.objects.select_for_update().get(pk=order.pk)
         previous_status = order.status
+        if previous_status == new_status:
+            return order
         order.status = new_status
         order.save(update_fields=['status', 'updated_at'])
 
@@ -192,7 +199,10 @@ class OrderService:
             notes=notes,
         )
 
-        NotificationService.notify_status_change(order, new_status)
+        transaction.on_commit(
+            partial(NotificationService.notify_status_change, order, new_status),
+            robust=True,
+        )
 
         return order
 

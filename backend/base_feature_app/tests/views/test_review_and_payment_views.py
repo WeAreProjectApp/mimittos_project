@@ -4,7 +4,7 @@
 
 import hashlib
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import override_settings
@@ -15,11 +15,14 @@ from base_feature_app.models import (
     Category,
     GlobalColor,
     Order,
+    OrderStatusHistory,
     Peluch,
     Review,
     WompiTransaction,
 )
 from base_feature_app.services.order_access_service import OrderAccessService
+from base_feature_app.services.order_service import OrderService
+from base_feature_app.services.wompi_service import WompiService
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -347,6 +350,70 @@ def test_wompi_webhook_returns_400_for_invalid_json(api_client):
         content_type='application/json',
     )
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+@override_settings(WOMPI_EVENTS_SECRET='test_secret', ADMIN_EMAIL='admin@example.com')
+def test_signed_webhook_repetition_confirms_once(api_client, wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    event = _make_wompi_event('test_secret', reference=wompi_tx.reference)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        first = api_client.post('/api/payment/wompi/webhook/', data=json.dumps(event), content_type='application/json')
+        repeated = api_client.post('/api/payment/wompi/webhook/', data=json.dumps(event), content_type='application/json')
+
+    assert first.status_code == 200
+    assert repeated.status_code == 200
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    history = OrderStatusHistory.objects.get(order_id=wompi_tx.order_id)
+    assert history.previous_status == Order.Status.PENDING_PAYMENT
+    assert history.new_status == Order.Status.PAYMENT_CONFIRMED
+    assert len(mailoutbox) == 2
+
+
+@pytest.mark.django_db
+def test_check_payment_retains_a_concurrent_webhook_approval(api_client, wompi_tx):
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    wompi_tx.wompi_id = 'current-id'
+    wompi_tx.save(update_fields=['wompi_id'])
+    approved_event = _make_wompi_event('test', reference=wompi_tx.reference, tx_id='current-id')
+
+    def provider_reply(*args, **kwargs):
+        WompiService.process_event(approved_event)
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': 'current-id', 'status': 'DECLINED'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        response = api_client.get(f'/api/payment/check/{wompi_tx.order.order_number}/')
+
+    assert response.status_code == 200
+    assert response.data['status'] == WompiTransaction.Status.APPROVED
+    assert response.data['order_status'] == Order.Status.PAYMENT_CONFIRMED
+    assert OrderStatusHistory.objects.filter(order_id=wompi_tx.order_id).count() == 1
+
+
+@pytest.mark.django_db
+def test_check_payment_preserves_concurrent_administrative_progress(api_client, wompi_tx):
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    wompi_tx.wompi_id = 'current-id'
+    wompi_tx.save(update_fields=['wompi_id'])
+
+    def provider_reply(*args, **kwargs):
+        OrderService.update_status(wompi_tx.order, Order.Status.IN_PRODUCTION)
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': 'current-id', 'status': 'APPROVED'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        response = api_client.get(f'/api/payment/check/{wompi_tx.order.order_number}/')
+
+    assert response.status_code == 200
+    assert response.data['status'] == WompiTransaction.Status.APPROVED
+    assert response.data['order_status'] == Order.Status.IN_PRODUCTION
+    assert not OrderStatusHistory.objects.filter(order_id=wompi_tx.order_id, new_status=Order.Status.PAYMENT_CONFIRMED).exists()
 
 
 # ---------------------------------------------------------------------------

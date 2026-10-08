@@ -3,9 +3,11 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.db import IntegrityError, close_old_connections, connection, connections
 from django.test import override_settings
+from threading import Event, Thread
 
-from base_feature_app.models import Order, WompiTransaction
+from base_feature_app.models import Order, OrderStatusHistory, WompiTransaction
 from base_feature_app.services.wompi_service import WompiService
 
 # ---------------------------------------------------------------------------
@@ -147,11 +149,13 @@ def test_process_event_updates_status_to_approved(wompi_tx):
             }
         },
     }
-    with patch('base_feature_app.services.order_service.OrderService.update_status') as mock_update:
-        WompiService.process_event(event_data)
-        wompi_tx.refresh_from_db()
-        assert wompi_tx.status == WompiTransaction.Status.APPROVED
-        mock_update.assert_called_once()
+    WompiService.process_event(event_data)
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    history = wompi_tx.order.status_history.get()
+    assert history.previous_status == Order.Status.PENDING_PAYMENT
+    assert history.new_status == Order.Status.PAYMENT_CONFIRMED
 
 
 @pytest.mark.django_db
@@ -175,7 +179,7 @@ def test_process_event_updates_status_to_declined(wompi_tx):
 
 @pytest.mark.django_db
 def test_process_event_does_not_update_order_for_declined(wompi_tx, existing_order):
-    """process_event skips OrderService.update_status when the transaction is declined."""
+    """A rejected webhook retains the existing pending-order contract."""
     event_data = {
         'event': 'transaction.updated',
         'data': {
@@ -187,10 +191,10 @@ def test_process_event_does_not_update_order_for_declined(wompi_tx, existing_ord
             }
         },
     }
-    with patch('base_feature_app.services.order_service.OrderService.update_status') as mock_update:
-        WompiService.process_event(event_data)
-        mock_update.assert_not_called()
-        assert mock_update.call_count == 0
+    WompiService.process_event(event_data)
+    existing_order.refresh_from_db()
+    assert existing_order.status == Order.Status.PENDING_PAYMENT
+    assert not existing_order.status_history.exists()
 
 
 @pytest.mark.django_db
@@ -248,6 +252,241 @@ def test_process_event_stores_payment_method_type(wompi_tx):
     WompiService.process_event(event_data)
     wompi_tx.refresh_from_db()
     assert wompi_tx.payment_method_type == 'NEQUI'
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+def test_process_event_repetition_sends_one_confirmation(wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
+    event = _make_event_data('test', reference=wompi_tx.reference)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        WompiService.process_event(event)
+        WompiService.process_event(event)
+        assert mailoutbox == []
+
+    assert wompi_tx.order.status_history.count() == 1
+    assert len(mailoutbox) == 2
+    assert sorted(message.to[0] for message in mailoutbox) == ['admin@example.com', wompi_tx.order.customer_email]
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+def test_payment_history_failure_can_be_retried(wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
+    data = _make_event_data('test', reference=wompi_tx.reference)['data']['transaction']
+
+    with django_capture_on_commit_callbacks(execute=True):
+        with pytest.raises(IntegrityError):
+            WompiService.apply_transaction_data(wompi_tx.reference, data, notes=None)
+        wompi_tx.refresh_from_db()
+        assert wompi_tx.status == WompiTransaction.Status.PENDING
+        assert wompi_tx.order.status == Order.Status.PENDING_PAYMENT
+        assert not wompi_tx.order.status_history.exists()
+        assert mailoutbox == []
+        WompiService.process_event(_make_event_data('test', reference=wompi_tx.reference))
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert wompi_tx.order.status_history.count() == 1
+    assert len(mailoutbox) == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('late_status', ['PENDING', 'DECLINED', 'VOIDED', 'ERROR'])
+def test_late_event_retains_approval(wompi_tx, late_status):
+    WompiService.process_event(_make_event_data('test', reference=wompi_tx.reference))
+
+    WompiService.process_event(_make_event_data('test', status=late_status, reference=wompi_tx.reference))
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert wompi_tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('terminal_status', ['DECLINED', 'VOIDED', 'ERROR'])
+def test_late_pending_retains_a_terminal_transaction(wompi_tx, terminal_status):
+    WompiService.process_event(_make_event_data('test', status=terminal_status, reference=wompi_tx.reference))
+
+    WompiService.process_event(_make_event_data('test', status='PENDING', reference=wompi_tx.reference))
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == terminal_status.lower()
+
+
+@pytest.mark.django_db
+def test_a_new_payment_attempt_can_be_pending(wompi_tx):
+    WompiService.process_event(_make_event_data('test', status='DECLINED', reference=wompi_tx.reference))
+
+    WompiService.apply_transaction_data(wompi_tx.reference, {
+        'id': 'new-attempt', 'status': 'PENDING', 'payment_method_type': 'NEQUI',
+    }, allow_new_attempt=True)
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.PENDING
+    assert wompi_tx.wompi_id == 'new-attempt'
+
+
+@pytest.mark.django_db
+def test_an_event_for_an_older_attempt_is_ignored(wompi_tx):
+    wompi_tx.wompi_id = 'current-attempt'
+    wompi_tx.save(update_fields=['wompi_id'])
+
+    WompiService.process_event(_make_event_data('test', tx_id='older-attempt', reference=wompi_tx.reference))
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.PENDING
+    assert wompi_tx.wompi_id == 'current-attempt'
+    assert wompi_tx.order.status == Order.Status.PENDING_PAYMENT
+    assert not wompi_tx.order.status_history.exists()
+
+
+@pytest.mark.django_db
+def test_approval_preserves_administrative_progress(wompi_tx):
+    from base_feature_app.services.order_service import OrderService
+    OrderService.update_status(wompi_tx.order, Order.Status.IN_PRODUCTION)
+
+    WompiService.process_event(_make_event_data('test', reference=wompi_tx.reference))
+
+    wompi_tx.order.refresh_from_db()
+    assert wompi_tx.order.status == Order.Status.IN_PRODUCTION
+    assert not wompi_tx.order.status_history.filter(new_status=Order.Status.PAYMENT_CONFIRMED).exists()
+
+
+def _run_competing_approvals(event):
+    """Pause real SQL after the first row lock; let a second connection contend."""
+    first_locked, second_waiting, release_first = Event(), Event(), Event()
+    failures, connection_ids = [], []
+    table = connection.ops.quote_name(Order._meta.db_table)
+
+    def worker(first):
+        close_old_connections()
+
+        def observe_lock(execute, sql, params, many, context):
+            if 'FOR UPDATE' in sql and table in sql:
+                if first:
+                    result = execute(sql, params, many, context)
+                    first_locked.set()
+                    if not release_first.wait(10):
+                        raise RuntimeError('First approval was not released.')
+                    return result
+                second_waiting.set()
+            return execute(sql, params, many, context)
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT CONNECTION_ID()')
+                connection_ids.append(cursor.fetchone()[0])
+            with connection.execute_wrapper(observe_lock):
+                WompiService.process_event(event)
+        except Exception as exc:
+            failures.append(exc)
+        finally:
+            connections.close_all()
+
+    first, second = Thread(target=worker, args=(True,)), Thread(target=worker, args=(False,))
+    first.start()
+    try:
+        assert first_locked.wait(10), 'First approval did not acquire the order row.'
+        second.start()
+        assert second_waiting.wait(10), 'Second approval did not contend for the order row.'
+    finally:
+        release_first.set()
+        first.join(15)
+        if second.ident is not None:
+            second.join(15)
+    assert not first.is_alive()
+    assert not second.is_alive()
+    return failures, connection_ids
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != 'mysql', reason='Row-lock contention requires independent MySQL connections.')
+@override_settings(ADMIN_EMAIL='admin@example.com')
+def test_concurrent_approvals_have_one_confirmation(wompi_tx, mailoutbox):
+    event = _make_event_data('test', reference=wompi_tx.reference)
+
+    failures, connection_ids = _run_competing_approvals(event)
+
+    assert failures == []
+    assert len(set(connection_ids)) == 2
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert wompi_tx.order.status_history.count() == 1
+    assert len(mailoutbox) == 2
+
+
+@pytest.mark.django_db
+def test_process_transaction_records_real_confirmation(wompi_tx):
+    response = MagicMock(status_code=201)
+    response.json.return_value = {'data': {'id': 'current-id', 'status': 'APPROVED', 'payment_method_type': 'CARD'}}
+
+    with patch('base_feature_app.services.wompi_service.requests.post', return_value=response):
+        result = WompiService.process_transaction(wompi_tx, {'type': 'CARD', 'token': 'synthetic-card'})
+
+    assert result['status'] == 'APPROVED'
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert wompi_tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+def test_process_transaction_retains_an_earlier_webhook_approval(wompi_tx):
+    def provider_reply(*args, **kwargs):
+        WompiService.process_event(_make_event_data('test', tx_id='current-id', reference=wompi_tx.reference))
+        response = MagicMock(status_code=201)
+        response.json.return_value = {'data': {'id': 'current-id', 'status': 'PENDING', 'payment_method_type': 'CARD'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.post', side_effect=provider_reply):
+        result = WompiService.process_transaction(wompi_tx, {'type': 'CARD', 'token': 'synthetic-card'})
+
+    assert result['status'] == 'APPROVED'
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+def test_async_url_poll_retains_a_concurrent_approval(wompi_tx):
+    initial = MagicMock(status_code=201)
+    initial.json.return_value = {'data': {'id': 'current-id', 'status': 'PENDING', 'payment_method_type': 'PSE'}}
+
+    def provider_reply(*args, **kwargs):
+        WompiService.process_event(_make_event_data('test', tx_id='current-id', reference=wompi_tx.reference))
+        response = MagicMock()
+        response.json.return_value = {'data': {
+            'id': 'current-id', 'status': 'PENDING',
+            'payment_method': {'extra': {'async_payment_url': 'https://bank.example.invalid/auth'}},
+        }}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.post', return_value=initial):
+        with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+            with patch('time.sleep'):
+                result = WompiService.process_transaction(wompi_tx, {'type': 'PSE'})
+
+    assert result['status'] == 'APPROVED'
+    assert result['redirect_url'] == 'https://bank.example.invalid/auth'
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+def test_process_transaction_retains_the_missing_status_error(wompi_tx):
+    response = MagicMock(status_code=201)
+    response.json.return_value = {'data': {'id': 'current-id'}}
+
+    with patch('base_feature_app.services.wompi_service.requests.post', return_value=response):
+        result = WompiService.process_transaction(wompi_tx, {'type': 'CARD', 'token': 'synthetic-card'})
+
+    assert result['status'] == 'ERROR'
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.ERROR
 
 
 # ---------------------------------------------------------------------------

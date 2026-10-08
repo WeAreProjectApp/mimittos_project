@@ -321,9 +321,7 @@ def reconcile_pending_payments():
       status → cancel as ABANDONED.
     """
     from base_feature_app.models import Order, WompiTransaction
-    from base_feature_app.services.order_service import OrderService
     from base_feature_app.services.wompi_service import WompiService
-    from base_feature_app.services.notification_service import NotificationService
 
     cutoff_recent = timezone.now() - timedelta(hours=1)
     cutoff_stale = timezone.now() - timedelta(hours=24)
@@ -342,11 +340,11 @@ def reconcile_pending_payments():
 
         if not tx.wompi_id:
             if tx.created_at < cutoff_stale:
-                OrderService.update_status(
-                    order, Order.Status.CANCELLED,
+                cancelled = WompiService.cancel_abandoned_order(
+                    tx.reference, without_provider_id=True,
                     notes='Pago abandonado: sin transacción Wompi tras 24h.',
                 )
-                cancelled_stale += 1
+                cancelled_stale += int(cancelled)
             continue
 
         wompi_data = WompiService.fetch_transaction(tx.wompi_id)
@@ -362,31 +360,21 @@ def reconcile_pending_payments():
         }
         new_status = status_map.get(wompi_status_raw)
 
-        if new_status and tx.status != new_status:
-            tx.status = new_status
-            tx.raw_response = wompi_data
-            tx.save(update_fields=['status', 'raw_response', 'updated_at'])
-
-        if new_status == WompiTransaction.Status.APPROVED:
-            OrderService.update_status(order, Order.Status.PAYMENT_CONFIRMED)
-            NotificationService.notify_new_order_admin(order)
-            confirmed += 1
-        elif new_status in (
-            WompiTransaction.Status.DECLINED,
-            WompiTransaction.Status.VOIDED,
-            WompiTransaction.Status.ERROR,
-        ):
-            OrderService.update_status(
-                order, Order.Status.CANCELLED,
+        if new_status:
+            tx = WompiService.apply_transaction_data(
+                tx.reference, wompi_data, cancel_failed=True,
                 notes=f'Pago Wompi {wompi_status_raw}: {wompi_data.get("status_message") or "sin detalle"}',
             )
-            cancelled_decline += 1
+            if tx.order.status == Order.Status.PAYMENT_CONFIRMED:
+                confirmed += 1
+            elif tx.order.status == Order.Status.CANCELLED:
+                cancelled_decline += 1
         elif tx.created_at < cutoff_stale and wompi_status_raw == 'PENDING':
-            OrderService.update_status(
-                order, Order.Status.CANCELLED,
+            cancelled = WompiService.cancel_abandoned_order(
+                tx.reference, expected_provider_id=tx.wompi_id,
                 notes='Pago abandonado: PENDING en Wompi tras 24h.',
             )
-            cancelled_stale += 1
+            cancelled_stale += int(cancelled)
 
     if confirmed or cancelled_decline or cancelled_stale:
         order_logger.info(
