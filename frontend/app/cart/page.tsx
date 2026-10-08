@@ -80,7 +80,7 @@ export default function CartPage() {
               const itemTotal = lineTotal(item)
               const itemKey = `${item.peluch_id}-${item.size_id}-${item.color_id}`
               return (
-                <div key={itemKey} className="grid grid-cols-[90px_1fr] sm:grid-cols-[120px_1fr_auto] gap-4 sm:gap-5" style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
+                <div key={itemKey} data-testid={`cart-item-${itemKey}`} className="grid grid-cols-[90px_1fr] sm:grid-cols-[120px_1fr_auto] gap-4 sm:gap-5" style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
                   <div className="w-[90px] h-[90px] sm:w-[120px] sm:h-[120px]" style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: item.color_hex || 'var(--pink-melo)', position: 'relative' }}>
                     {cover && <Image src={cover} alt={item.title} fill style={{ objectFit: 'cover' }} />}
                   </div>
