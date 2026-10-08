@@ -1,6 +1,10 @@
 """Catalog API behavior tests."""
 
+import io
+
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Attachment, Library
@@ -23,6 +27,93 @@ from base_feature_app.tests.factories import (
 )
 
 MAX_CATALOG_LIST_QUERIES = 6
+
+
+def _category_image_upload():
+    buffer = io.BytesIO()
+    Image.new('RGB', (32, 16), 'red').save(buffer, format='PNG')
+    return SimpleUploadedFile('category.png', buffer.getvalue(), content_type='image/png')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('image_bytes', [b'not an image', b'x' * (5 * 1024 * 1024 + 1)], ids=['corrupt', 'oversized'])
+def test_rejected_category_image_does_not_create_category(admin_client, image_bytes):
+    image = SimpleUploadedFile('invalid.png', image_bytes, content_type='image/png')
+
+    response = admin_client.post('/api/categories/', {'name': 'Rejected', 'image': image}, format='multipart')
+
+    assert response.status_code == 400
+    assert not Category.objects.filter(name='Rejected').exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('image_bytes', [b'not an image', b'x' * (5 * 1024 * 1024 + 1)], ids=['corrupt', 'oversized'])
+def test_rejected_category_image_preserves_category(admin_client, category, image_bytes):
+    Category.objects.filter(pk=category.pk).update(image='previous.jpg', description='Original')
+    image = SimpleUploadedFile('invalid.png', image_bytes, content_type='image/png')
+
+    response = admin_client.patch(
+        f'/api/categories/{category.pk}/',
+        {'name': 'Changed', 'description': 'Changed', 'image': image}, format='multipart',
+    )
+
+    assert response.status_code == 400
+    category.refresh_from_db()
+    assert (category.name, category.slug, category.description, category.image.name) == (
+        'Osos', 'osos', 'Original', 'previous.jpg',
+    )
+
+
+@pytest.mark.django_db
+def test_category_image_storage_failure_preserves_category(admin_client, category, monkeypatch):
+    Category.objects.filter(pk=category.pk).update(image='previous.jpg')
+    storage = Category._meta.get_field('image').storage
+
+    def fail_save(*args, **kwargs):
+        raise OSError('storage unavailable')
+
+    monkeypatch.setattr(storage, 'save', fail_save)
+
+    response = admin_client.patch(
+        f'/api/categories/{category.pk}/',
+        {'name': 'Changed', 'image': _category_image_upload()}, format='multipart',
+    )
+
+    assert response.status_code == 503
+    category.refresh_from_db()
+    assert (category.name, category.slug, category.image.name) == ('Osos', 'osos', 'previous.jpg')
+
+
+@pytest.mark.django_db
+def test_category_image_storage_failure_does_not_create_category(admin_client, monkeypatch):
+    storage = Category._meta.get_field('image').storage
+
+    def fail_save(*args, **kwargs):
+        raise OSError('storage unavailable')
+
+    monkeypatch.setattr(storage, 'save', fail_save)
+
+    response = admin_client.post(
+        '/api/categories/', {'name': 'Rejected', 'image': _category_image_upload()}, format='multipart',
+    )
+
+    assert response.status_code == 503
+    assert not Category.objects.filter(name='Rejected').exists()
+
+
+@pytest.mark.django_db
+def test_category_image_is_saved_as_jpeg(admin_client, settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+
+    response = admin_client.post(
+        '/api/categories/', {'name': 'Image category', 'image': _category_image_upload()}, format='multipart',
+    )
+
+    assert response.status_code == 201
+    category = Category.objects.get(pk=response.data['id'])
+    with category.image.open('rb') as saved_file:
+        with Image.open(saved_file) as image:
+            assert image.format == 'JPEG'
 
 
 def _create_catalog_peluches(count, *, featured=False, is_available=True):

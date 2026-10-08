@@ -3,6 +3,44 @@ import { waitForPageLoad, testCheckoutData } from '../fixtures';
 import { CHECKOUT_FORM_DISPLAY, CHECKOUT_FORM_VALIDATION, CHECKOUT_FORM_FILL, CHECKOUT_WOMPI_REDIRECT } from '../helpers/flow-tags';
 
 test.describe('Checkout Flow', () => {
+  // quality: disable test_too_long (product → checkout → server amount verifies rounding parity)
+  test('shows the same halfway deposit as the order charge',
+    { tag: [...CHECKOUT_WOMPI_REDIRECT] }, async ({ page }) => {
+      const product = {
+        id: 901, title: 'Rounding bear', slug: 'rounding-bear',
+        category_name: 'Osos', category_slug: 'osos', category: { name: 'Osos', slug: 'osos' },
+        lead_description: 'Test', badge: 'none', is_active: true, is_featured: false,
+        discount_pct: 0, display_order: 0, min_price: 50100, discounted_min_price: 50100,
+        available_colors: [{ id: 1, name: 'Rosa', slug: 'rosa', hex_code: '#FF69B4', sort_order: 0, preview_url: null, image_count: 0, images: [] }],
+        gallery_urls: [], average_rating: 0, review_count: 0,
+        has_huella: false, has_corazon: false, has_audio: false,
+        description: [], specifications: {}, care_instructions: [],
+        size_prices: [{ id: 1, size: { id: 1, label: 'Mini', slug: 'mini', cm: '10cm', sort_order: 0 }, price: 50100, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
+        view_count: 0, huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0,
+      }
+      await page.route('**/api/peluches/rounding-bear/', (route) => route.fulfill({ json: product }))
+      await page.route('**/api/orders/', (route) => route.fulfill({ status: 201, json: {
+        order_number: 'MMT-ROUNDING', total_amount: 50100, deposit_amount: 25000,
+        balance_amount: 25100, shipping_amount: 0, discount_amount: 0,
+        payment_mode: 'deposit', amount_paid_now: 25000, is_guest: true,
+      } }))
+
+      await page.goto('/peluches/rounding-bear')
+      await expect(page.getByText('Pagas $25.000 hoy vía Wompi', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Agregar · $50.100', exact: true }).click()
+      await page.goto('/checkout')
+      await expect(page.getByText('Pagar anticipo', { exact: true }).locator('..')).toContainText('$25.000')
+      await page.getByText('Nombre completo', { exact: true }).locator('..').locator('input').fill('Ana López')
+      await page.getByText('Correo electrónico', { exact: true }).locator('..').locator('input').fill('ana@example.com')
+      await page.getByText('Celular', { exact: true }).locator('..').locator('input').fill('3001234567')
+      await page.getByPlaceholder('Calle 50 # 40-20, Apto 301').fill('Calle 50 # 40-20')
+      await page.getByRole('checkbox').check()
+      await page.getByRole('button', { name: 'Ir a pagar · $25.000', exact: true }).click()
+
+      await expect(page).toHaveURL(/\/payment\?order=MMT-ROUNDING&amount=25000&guest=1$/)
+    },
+  )
+
   test('should display the checkout form once the cart has an item', { tag: [...CHECKOUT_FORM_DISPLAY, '@outcome:display'] }, async ({ page }) => {
     // Add a seeded product to the cart so checkout renders its form (not the empty-cart message).
     await page.goto('/catalog');

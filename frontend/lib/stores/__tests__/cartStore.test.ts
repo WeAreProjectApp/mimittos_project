@@ -1,10 +1,42 @@
 import { describe, it, expect, beforeEach } from '@jest/globals'
 import { renderHook, act } from '@testing-library/react'
-import { useCartStore, lineTotal, calcDeposit } from '../cartStore'
+import {
+  useCartStore, lineTotal, calcDeposit, calcFullPaymentDiscount, calcShipping,
+  calcAmountToPayNow, calcBalanceAtDelivery,
+} from '../cartStore'
 import { mockCartItems } from '../../__tests__/fixtures'
 
 const item1 = mockCartItems[0] // peluch_id:1 size_id:2 color_id:1, unit_price:128000, qty:2
 const item2 = mockCartItems[1] // peluch_id:2 size_id:1 color_id:2, unit_price:92000, qty:1
+
+describe('payment rounding', () => {
+  it.each([[50100, 25000], [50300, 25200]])('matches the deposit charged for %s COP', (price, expected) => {
+    expect(calcDeposit([{ ...item1, unit_price: price, personalization_cost: 0, quantity: 1, deposit_percentage: 50 }])).toBe(expected)
+  })
+
+  it.each([[50100, 25000], [50300, 25200]])('matches the full payment discount for %s COP', (price, expected) => {
+    expect(calcFullPaymentDiscount([{ ...item1, unit_price: price, personalization_cost: 0, quantity: 1, full_payment_discount_pct: 50 }])).toBe(expected)
+  })
+
+  it.each([[25050, 25000], [25150, 25200]])('matches the shipping charged for %s COP', (shipping, expected) => {
+    expect(calcShipping([{ ...item1, quantity: 1, free_shipping: false, shipping_cost: shipping }])).toBe(expected)
+  })
+
+  it('rounds the aggregate deposit after adding all lines', () => {
+    const line = { ...item1, unit_price: 50100, personalization_cost: 0, quantity: 1, deposit_percentage: 50 }
+    expect(calcDeposit([line, line])).toBe(50100)
+  })
+
+  it('shows the corrected delivery balance', () => {
+    const line = { ...item1, unit_price: 50100, personalization_cost: 0, quantity: 1, deposit_percentage: 50, free_shipping: true }
+    expect(calcBalanceAtDelivery([line], 'deposit')).toBe(25100)
+  })
+
+  it('shows the corrected full payment amount', () => {
+    const line = { ...item1, unit_price: 50100, personalization_cost: 0, quantity: 1, full_payment_discount_pct: 50, free_shipping: true }
+    expect(calcAmountToPayNow([line], 'full')).toBe(25100)
+  })
+})
 
 describe('cartStore', () => {
   beforeEach(() => {

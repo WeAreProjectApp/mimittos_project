@@ -1,10 +1,12 @@
 import io
 
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.db import transaction
 from django.db.models import Min, OuterRef, Prefetch, Q, Subquery
 from PIL import Image
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -38,6 +40,28 @@ def _optimize_image(file) -> InMemoryUploadedFile:
 
     name = file.name.rsplit('.', 1)[0] + '.jpg'
     return InMemoryUploadedFile(buf, 'file', name, 'image/jpeg', buf.getbuffer().nbytes, None)
+
+
+class CategoryImageSaveError(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = 'No pudimos guardar la imagen. Los cambios no se guardaron. Intenta de nuevo.'
+
+
+def _save_category(serializer, image_file):
+    """Prepare the image before persisting any category changes."""
+    if image_file is None:
+        return serializer.save()
+    if image_file.size > _IMG_MAX_BYTES:
+        raise ValidationError({'detail': 'La imagen supera el límite de 5 MB.'})
+    try:
+        prepared_image = _optimize_image(image_file)
+    except Exception as exc:
+        raise ValidationError({'detail': 'Imagen inválida o corrupta.'}) from exc
+    try:
+        with transaction.atomic():
+            return serializer.save(image=prepared_image)
+    except Exception as exc:
+        raise CategoryImageSaveError() from exc
 
 
 @api_view(['GET', 'POST'])
@@ -165,16 +189,7 @@ def categories(request):
 
     serializer = CategorySerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
-        instance = serializer.save()
-        image_file = request.FILES.get('image')
-        if image_file:
-            if image_file.size > _IMG_MAX_BYTES:
-                return Response({'detail': 'La imagen supera el límite de 5 MB.'}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                instance.image = _optimize_image(image_file)
-                instance.save(update_fields=['image'])
-            except Exception:
-                return Response({'detail': 'Imagen inválida o corrupta.'}, status=status.HTTP_400_BAD_REQUEST)
+        instance = _save_category(serializer, request.FILES.get('image'))
         return Response(CategorySerializer(instance, context={'request': request}).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -209,16 +224,7 @@ def category_detail(request, category_id: int):
 
     serializer = CategorySerializer(category, data=request.data, partial=(request.method == 'PATCH'), context={'request': request})
     if serializer.is_valid():
-        instance = serializer.save()
-        image_file = request.FILES.get('image')
-        if image_file:
-            if image_file.size > _IMG_MAX_BYTES:
-                return Response({'detail': 'La imagen supera el límite de 5 MB.'}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                instance.image = _optimize_image(image_file)
-                instance.save(update_fields=['image'])
-            except Exception:
-                return Response({'detail': 'Imagen inválida o corrupta.'}, status=status.HTTP_400_BAD_REQUEST)
+        instance = _save_category(serializer, request.FILES.get('image'))
         return Response(CategorySerializer(instance, context={'request': request}).data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
