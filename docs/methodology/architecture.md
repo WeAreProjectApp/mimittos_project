@@ -219,6 +219,29 @@ la respuesta sólo se publica mientras esa consulta siga vigente.
 El listado y detalle del directorio de usuarios comprueban staff antes
 de acceder a sus datos. No se cambia el modelo ni las rutas.
 
+## Contratos de la ronda transversal — 2026-10-08
+
+Las lecturas de ventas legacy también comprueban staff antes de consultar
+listado o detalle. Las reseñas públicas omiten el correo del autor y exponen
+`is_mine`, calculado contra el usuario autenticado de cada solicitud. Los
+textos potencialmente interpretables como fórmulas se prefijan únicamente
+al exportar CSV; los valores almacenados y las cifras se conservan.
+
+Las categorías preparan la imagen antes de guardar sus datos y revierten la
+escritura si falla el almacenamiento. Peluches valida las tallas existentes
+y guarda producto, galería, colores y precios dentro de una transacción.
+El frontend comparte redondeo al par para anticipos, conforme al servidor:
+50.100 COP al 50 % muestra y cobra 25.000 COP.
+
+Las respuestas PATCH de pedidos precargan las relaciones después de la
+mutación, sin modificar los bloqueos ni los callbacks. SMTP tiene timeout
+de diez segundos por defecto, configurable con `DJANGO_EMAIL_TIMEOUT`.
+El fallo de la notificación no deshace el pago ni duplica su confirmación.
+
+La navegación administrativa usa drawer por debajo de 1024 px y sidebar
+fijo desde ese ancho. CI añade MySQL 8 aislado para las pruebas de bloqueos
+de fila: diez escenarios, doce casos y rechazo de ejecuciones omitidas.
+
 ## Lecturas y carga de gráficos — 2026-09-30
 
 La creación de ventas legacy resuelve los productos de cada bloque interno con
