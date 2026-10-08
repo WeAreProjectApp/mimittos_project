@@ -254,27 +254,16 @@ def check_payment_status(request, order_number: str):
     }
     new_status = status_map.get(wompi_status_raw)
 
-    if new_status and tx.status != new_status:
-        tx.status = new_status
-        tx.raw_response = wompi_data
-        tx.save(update_fields=['status', 'raw_response', 'updated_at'])
-
-        from base_feature_app.models import Order
-        from base_feature_app.services.order_service import OrderService
-        order = tx.order
-
-        if new_status == WompiTransaction.Status.APPROVED:
-            from base_feature_app.services.notification_service import NotificationService
-            if order.status == Order.Status.PENDING_PAYMENT:
-                OrderService.update_status(order, Order.Status.PAYMENT_CONFIRMED)
-                NotificationService.notify_new_order_admin(order)
-        elif new_status in (WompiTransaction.Status.DECLINED, WompiTransaction.Status.VOIDED, WompiTransaction.Status.ERROR):
-            if order.status == Order.Status.PENDING_PAYMENT:
-                OrderService.update_status(
-                    order,
-                    Order.Status.CANCELLED,
-                    notes=f'Pago Wompi {wompi_status_raw}: {wompi_data.get("status_message") or "sin detalle"}',
-                )
+    if new_status:
+        tx = WompiService.apply_transaction_data(
+            tx.reference, wompi_data, cancel_failed=True,
+            notes=f'Pago Wompi {wompi_status_raw}: {wompi_data.get("status_message") or "sin detalle"}',
+        )
+    else:
+        # The provider call may have overlapped a webhook even when it returned
+        # no terminal status. Publish the current local state in that case.
+        tx.refresh_from_db()
+        tx.order.refresh_from_db()
 
     return Response({
         'status': tx.status,

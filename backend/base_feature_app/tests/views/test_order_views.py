@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from django.core import signing
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Library
@@ -21,6 +22,7 @@ from base_feature_app.models import (
     Peluch,
     PeluchSizePrice,
     PersonalizationMedia,
+    WompiTransaction,
 )
 from base_feature_app.services.order_access_service import (
     ORDER_ACCESS_SALT,
@@ -31,6 +33,7 @@ from base_feature_app.tests.factories import (
     GlobalSizeFactory,
     PeluchFactory,
 )
+from base_feature_app.utils.media_access import issue_media_token
 
 MAX_ORDER_READ_QUERIES = 4
 
@@ -348,6 +351,48 @@ def test_create_order_rejects_foreign_huella_without_side_effects(
     assert Order.objects.count() == 0
     assert OrderItem.objects.count() == 0
     assert media.is_used is False
+
+
+@pytest.mark.django_db
+def test_create_order_reports_a_media_removed_after_validation(
+    anon_client, order_data, peluch_with_price, settings, tmp_path,
+):
+    """Delete through the real task after the validator's buffered SQL read."""
+    from base_feature_project.tasks import cleanup_unused_media_files
+    settings.MEDIA_ROOT = tmp_path
+    peluch_with_price.has_huella = True
+    peluch_with_price.save(update_fields=['has_huella'])
+    media = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file=SimpleUploadedFile('checkout-image.jpg', b'personalization'), file_size_kb=1,
+    )
+    PersonalizationMedia.objects.filter(pk=media.pk).update(
+        created_at=datetime.now(datetime_timezone.utc) - timedelta(hours=49),
+    )
+    order_data['items'][0].update(
+        has_huella=True, huella_type=OrderItem.HuellaType.IMAGE,
+        huella_media_id=media.pk, huella_media_token=issue_media_token(media),
+    )
+    table = connection.ops.quote_name(PersonalizationMedia._meta.db_table)
+    removed = False
+
+    def remove_after_lookup(execute, sql, params, many, context):
+        nonlocal removed
+        result = execute(sql, params, many, context)
+        if not removed and f'FROM {table}' in sql and 'FOR UPDATE' not in sql:
+            removed = True
+            cleanup_unused_media_files.call_local()
+        return result
+
+    with connection.execute_wrapper(remove_after_lookup):
+        response = anon_client.post('/api/orders/', order_data, format='json')
+
+    assert removed is True
+    assert response.status_code == 400
+    assert 'Vuelve a subirlo' in response.data['detail']
+    assert Order.objects.count() == 0
+    assert OrderItem.objects.count() == 0
+    assert WompiTransaction.objects.count() == 0
 
 
 @pytest.mark.django_db

@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Library
@@ -482,8 +482,7 @@ def test_create_order_marks_personalization_media_as_used(peluch_with_price, siz
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-@patch('base_feature_app.services.notification_service.NotificationService.notify_status_change')
-def test_update_status_changes_order_status(mock_notify, existing_order):
+def test_update_status_changes_order_status(existing_order):
     """Verify update status changes order status."""
     OrderService.update_status(existing_order, Order.Status.PAYMENT_CONFIRMED)
     existing_order.refresh_from_db()
@@ -491,16 +490,14 @@ def test_update_status_changes_order_status(mock_notify, existing_order):
 
 
 @pytest.mark.django_db
-@patch('base_feature_app.services.notification_service.NotificationService.notify_status_change')
-def test_update_status_creates_history_entry(mock_notify, existing_order):
+def test_update_status_creates_history_entry(existing_order):
     """Verify update status creates history entry."""
     OrderService.update_status(existing_order, Order.Status.IN_PRODUCTION)
     assert OrderStatusHistory.objects.filter(order=existing_order).exists()
 
 
 @pytest.mark.django_db
-@patch('base_feature_app.services.notification_service.NotificationService.notify_status_change')
-def test_update_status_records_previous_status(mock_notify, existing_order):
+def test_update_status_records_previous_status(existing_order):
     """Verify update status records previous status."""
     previous = existing_order.status
     OrderService.update_status(existing_order, Order.Status.PAYMENT_CONFIRMED)
@@ -509,9 +506,85 @@ def test_update_status_records_previous_status(mock_notify, existing_order):
 
 
 @pytest.mark.django_db
-@patch('base_feature_app.services.notification_service.NotificationService.notify_status_change')
-def test_update_status_calls_notify(mock_notify, existing_order):
-    """Verify update status calls notify."""
+def test_update_status_sends_email_after_commit(existing_order, mailoutbox, django_capture_on_commit_callbacks):
+    """A status email cannot escape a transaction that has not committed."""
+    with django_capture_on_commit_callbacks(execute=True):
+        OrderService.update_status(existing_order, Order.Status.SHIPPED)
+        assert mailoutbox == []
+
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == [existing_order.customer_email]
+    assert existing_order.order_number in mailoutbox[0].body
+
+
+@pytest.mark.django_db
+def test_update_status_rolls_back_a_failed_history(existing_order, mailoutbox, django_capture_on_commit_callbacks):
+    """Use a real NOT NULL violation, not a mocked history writer."""
+    with django_capture_on_commit_callbacks(execute=True):
+        with pytest.raises(IntegrityError):
+            OrderService.update_status(existing_order, Order.Status.SHIPPED, notes=None)
+
+    existing_order.refresh_from_db()
+    assert existing_order.status == Order.Status.PENDING_PAYMENT
+    assert not existing_order.status_history.exists()
+    assert mailoutbox == []
+
+
+@pytest.mark.django_db
+def test_update_status_repetition_has_one_history(existing_order, mailoutbox, django_capture_on_commit_callbacks):
+    """Record one history entry for repeated updates to the same status."""
+    with django_capture_on_commit_callbacks(execute=True):
+        OrderService.update_status(existing_order, Order.Status.SHIPPED)
+        OrderService.update_status(existing_order, Order.Status.SHIPPED)
+
+    assert existing_order.status_history.count() == 1
+    assert len(mailoutbox) == 1
+
+
+@pytest.mark.django_db
+def test_update_status_records_the_current_previous_status(existing_order):
+    """Record the persisted previous status instead of a stale instance value."""
+    OrderService.update_status(existing_order, Order.Status.IN_PRODUCTION)
+
     OrderService.update_status(existing_order, Order.Status.SHIPPED)
-    mock_notify.assert_called_once_with(existing_order, Order.Status.SHIPPED)
-    assert mock_notify.call_count == 1
+
+    history = existing_order.status_history.get(new_status=Order.Status.SHIPPED)
+    assert history.previous_status == Order.Status.IN_PRODUCTION
+
+
+@pytest.mark.django_db
+def test_create_order_rejects_a_removed_media_without_partial_order(base_order_data):
+    """Reject removed personalization before creating any order rows."""
+    media = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/removed-image.jpg', file_size_kb=100,
+    )
+    validated_media = PersonalizationMedia.objects.get(pk=media.pk)
+    media.delete()
+    base_order_data['items'][0].update(
+        has_huella=True, huella_type=OrderItem.HuellaType.IMAGE, huella_media=validated_media,
+    )
+
+    with pytest.raises(ValueError, match='Vuelve a subirlo'):
+        OrderService.create_order(base_order_data)
+
+    assert Order.objects.count() == 0
+    assert OrderItem.objects.count() == 0
+    assert WompiTransaction.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_order_preserves_reusable_media(base_order_data):
+    """Allow previously used personalization to be linked to another order."""
+    media = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/reusable-image.jpg', file_size_kb=100, is_used=True,
+    )
+    base_order_data['items'][0].update(
+        has_huella=True, huella_type=OrderItem.HuellaType.IMAGE, huella_media=media,
+    )
+
+    order = OrderService.create_order(base_order_data)
+
+    assert order.items.get().huella_media_id == media.pk
+    assert PersonalizationMedia.objects.get(pk=media.pk).is_used is True

@@ -2,16 +2,30 @@
 
 import logging
 from datetime import timedelta
+from pathlib import Path
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.db import close_old_connections, connection, connections
 from django.test import override_settings
 from django.utils import timezone
 from freezegun import freeze_time
 
-from base_feature_app.models import PersonalizationMedia
-from base_feature_app.tests.factories import PersonalizationMediaFactory
+from base_feature_app.models import (
+    Order,
+    OrderItem,
+    PersonalizationMedia,
+    WompiTransaction,
+)
+from base_feature_app.tests.factories import (
+    GlobalColorFactory,
+    OrderItemFactory,
+    PeluchSizePriceFactory,
+    PersonalizationMediaFactory,
+    WompiTransactionFactory,
+)
 
 
 class _FakeQS(list):
@@ -272,3 +286,231 @@ def test_cleanup_unused_media_retries_after_storage_recovers(monkeypatch):
     cleanup_unused_media_files.call_local()
 
     assert PersonalizationMedia.objects.filter(pk=media.pk).count() == 0
+
+
+@pytest.fixture
+def pending_reconciliation_payment(db):
+    """Create an aged pending payment for reconciliation tests."""
+    tx = WompiTransactionFactory(wompi_id='current-id', status=WompiTransaction.Status.PENDING)
+    Order.objects.filter(pk=tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    WompiTransaction.objects.filter(pk=tx.pk).update(created_at=timezone.now() - timedelta(hours=25))
+    tx.refresh_from_db()
+    return tx
+
+
+@pytest.mark.django_db
+def test_reconciliation_preserves_a_concurrent_approval(pending_reconciliation_payment):
+    """Keep an approval received while reconciliation awaits the provider."""
+    from base_feature_project.tasks import reconcile_pending_payments
+
+    from base_feature_app.services.wompi_service import WompiService
+    tx = pending_reconciliation_payment
+    approved = {'id': tx.wompi_id, 'reference': tx.reference, 'status': 'APPROVED'}
+
+    def provider_reply(*args, **kwargs):
+        WompiService.process_event({'event': 'transaction.updated', 'data': {'transaction': approved}})
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': tx.wompi_id, 'status': 'PENDING'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        reconcile_pending_payments.call_local()
+
+    tx.refresh_from_db()
+    assert tx.status == WompiTransaction.Status.APPROVED
+    assert tx.order.status == Order.Status.PAYMENT_CONFIRMED
+    assert tx.order.status_history.count() == 1
+
+
+@pytest.mark.django_db
+def test_reconciliation_preserves_administrative_progress(pending_reconciliation_payment):
+    """Preserve administrative progress during a delayed provider response."""
+    from base_feature_project.tasks import reconcile_pending_payments
+
+    from base_feature_app.services.order_service import OrderService
+    tx = pending_reconciliation_payment
+
+    def provider_reply(*args, **kwargs):
+        OrderService.update_status(tx.order, Order.Status.IN_PRODUCTION)
+        response = MagicMock()
+        response.json.return_value = {'data': {'id': tx.wompi_id, 'status': 'DECLINED'}}
+        return response
+
+    with patch('base_feature_app.services.wompi_service.requests.get', side_effect=provider_reply):
+        reconcile_pending_payments.call_local()
+
+    tx.order.refresh_from_db()
+    assert tx.order.status == Order.Status.IN_PRODUCTION
+    assert not tx.order.status_history.filter(new_status=Order.Status.CANCELLED).exists()
+
+
+@pytest.mark.django_db
+def test_reconciliation_cancels_abandoned_errors_without_a_provider_id(pending_reconciliation_payment):
+    """Cancel an abandoned error that never obtained a provider identifier."""
+    from base_feature_project.tasks import reconcile_pending_payments
+    tx = pending_reconciliation_payment
+    WompiTransaction.objects.filter(pk=tx.pk).update(wompi_id='', status=WompiTransaction.Status.ERROR)
+
+    reconcile_pending_payments.call_local()
+
+    tx.order.refresh_from_db()
+    assert tx.order.status == Order.Status.CANCELLED
+    assert tx.order.status_history.get().new_status == Order.Status.CANCELLED
+
+
+@pytest.fixture
+def expired_checkout_media(db, tmp_path):
+    """Provide expired personalization in isolated temporary storage."""
+    with override_settings(MEDIA_ROOT=tmp_path):
+        media = PersonalizationMediaFactory()
+        PersonalizationMedia.objects.filter(pk=media.pk).update(created_at=timezone.now() - timedelta(hours=49))
+        price = PeluchSizePriceFactory()
+        price.peluch.has_huella = True
+        price.peluch.save(update_fields=['has_huella'])
+        color = GlobalColorFactory()
+        price.peluch.available_colors.add(color)
+        data = {
+            'customer_name': 'Checkout Customer', 'customer_email': 'checkout@example.invalid',
+            'customer_phone': '3001234567', 'address': 'Calle 1', 'city': 'Bogotá', 'department': 'Cundinamarca',
+            'items': [{
+                'peluch': price.peluch, 'size': price.size, 'color': color, 'quantity': 1,
+                'has_huella': True, 'huella_type': OrderItem.HuellaType.IMAGE, 'huella_media': media,
+                'has_corazon': False, 'has_audio': False,
+            }],
+        }
+        yield media, data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('media_field', ['huella_media', 'audio_media'])
+def test_cleanup_retains_a_referenced_media_with_an_unset_flag(expired_checkout_media, media_field):
+    """Retain a referenced file whose usage flag is unset."""
+    from base_feature_project.tasks import cleanup_unused_media_files
+    media, _ = expired_checkout_media
+    item = OrderItemFactory(**{media_field: media})
+    path = Path(media.file.path)
+
+    cleanup_unused_media_files.call_local()
+
+    assert path.exists()
+    assert PersonalizationMedia.objects.filter(pk=media.pk).exists()
+    item.refresh_from_db()
+    assert getattr(item, f'{media_field}_id') == media.pk
+
+
+@pytest.mark.django_db
+def test_cleanup_removes_an_expired_unreferenced_file(expired_checkout_media):
+    """Remove an expired file that has no order references."""
+    from base_feature_project.tasks import cleanup_unused_media_files
+    media, _ = expired_checkout_media
+    media_id, path = media.pk, Path(media.file.path)
+
+    cleanup_unused_media_files.call_local()
+
+    assert not path.exists()
+    assert not PersonalizationMedia.objects.filter(pk=media_id).exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_retains_a_used_expired_file(expired_checkout_media):
+    """Retain an expired file already marked as used."""
+    from base_feature_project.tasks import cleanup_unused_media_files
+    media, _ = expired_checkout_media
+    PersonalizationMedia.objects.filter(pk=media.pk).update(is_used=True)
+    path = Path(media.file.path)
+
+    cleanup_unused_media_files.call_local()
+
+    assert path.exists()
+    assert PersonalizationMedia.objects.filter(pk=media.pk).exists()
+
+
+def _run_media_race(data, *, checkout_first):
+    """Observe real row-lock contention, without replacing queryset behavior."""
+    from base_feature_project.tasks import cleanup_unused_media_files
+
+    from base_feature_app.services.order_service import OrderService
+    first_locked, second_waiting, release_first = Event(), Event(), Event()
+    failures, connection_ids = [], []
+    table = connection.ops.quote_name(PersonalizationMedia._meta.db_table)
+
+    def worker(first):
+        close_old_connections()
+
+        def observe_lock(execute, sql, params, many, context):
+            if 'FOR UPDATE' in sql and table in sql:
+                if not first:
+                    second_waiting.set()
+                result = execute(sql, params, many, context)
+                with context['connection'].cursor() as cursor:
+                    cursor.execute('SELECT CONNECTION_ID()')
+                    connection_ids.append(cursor.fetchone()[0])
+                if first:
+                    first_locked.set()
+                    if not release_first.wait(10):
+                        raise RuntimeError('First media operation was not released.')
+                return result
+            return execute(sql, params, many, context)
+
+        try:
+            with connection.execute_wrapper(observe_lock):
+                if first == checkout_first:
+                    OrderService.create_order(data)
+                else:
+                    cleanup_unused_media_files.call_local()
+        except Exception as exc:
+            failures.append(exc)
+        finally:
+            connections.close_all()
+
+    first, second = Thread(target=worker, args=(True,)), Thread(target=worker, args=(False,))
+    first.start()
+    try:
+        assert first_locked.wait(10), 'First operation did not acquire the media row.'
+        second.start()
+        assert second_waiting.wait(10), 'Second operation did not contend for the media row.'
+    finally:
+        release_first.set()
+        first.join(15)
+        if second.ident is not None:
+            second.join(15)
+    assert not first.is_alive()
+    assert not second.is_alive()
+    return failures, connection_ids
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != 'mysql', reason='Media row-lock contention requires independent MySQL connections.')
+def test_checkout_winning_cleanup_retains_the_personalization(expired_checkout_media):
+    """Retain personalization when checkout acquires its lock first."""
+    media, data = expired_checkout_media
+    media_id, path = media.pk, Path(media.file.path)
+
+    failures, connection_ids = _run_media_race(data, checkout_first=True)
+
+    assert failures == []
+    assert len(set(connection_ids)) == 2
+    assert path.exists()
+    assert PersonalizationMedia.objects.get(pk=media_id).is_used is True
+    assert OrderItem.objects.get().huella_media_id == media_id
+    assert Order.objects.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor != 'mysql', reason='Media row-lock contention requires independent MySQL connections.')
+def test_cleanup_winning_checkout_leaves_no_partial_order(expired_checkout_media):
+    """Reject checkout without partial rows when cleanup wins the lock."""
+    media, data = expired_checkout_media
+    media_id, path = media.pk, Path(media.file.path)
+
+    failures, connection_ids = _run_media_race(data, checkout_first=False)
+
+    assert len(failures) == 1
+    assert isinstance(failures[0], ValueError)
+    assert 'Vuelve a subirlo' in str(failures[0])
+    assert len(set(connection_ids)) == 2
+    assert not path.exists()
+    assert not PersonalizationMedia.objects.filter(pk=media_id).exists()
+    assert Order.objects.count() == 0
+    assert OrderItem.objects.count() == 0
+    assert WompiTransaction.objects.count() == 0
