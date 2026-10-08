@@ -7,7 +7,7 @@ from django.db import IntegrityError, close_old_connections, connection, connect
 from django.test import override_settings
 from threading import Event, Thread
 
-from base_feature_app.models import Order, OrderStatusHistory, WompiTransaction
+from base_feature_app.models import Order, WompiTransaction
 from base_feature_app.services.wompi_service import WompiService
 
 # ---------------------------------------------------------------------------
