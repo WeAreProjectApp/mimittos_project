@@ -548,3 +548,39 @@ def test_update_status_records_the_current_previous_status(existing_order):
 
     history = existing_order.status_history.get(new_status=Order.Status.SHIPPED)
     assert history.previous_status == Order.Status.IN_PRODUCTION
+
+
+@pytest.mark.django_db
+def test_create_order_rejects_a_removed_media_without_partial_order(base_order_data):
+    media = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/removed-image.jpg', file_size_kb=100,
+    )
+    validated_media = PersonalizationMedia.objects.get(pk=media.pk)
+    media.delete()
+    base_order_data['items'][0].update(
+        has_huella=True, huella_type=OrderItem.HuellaType.IMAGE, huella_media=validated_media,
+    )
+
+    with pytest.raises(ValueError, match='Vuelve a subirlo'):
+        OrderService.create_order(base_order_data)
+
+    assert Order.objects.count() == 0
+    assert OrderItem.objects.count() == 0
+    assert WompiTransaction.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_order_preserves_reusable_media(base_order_data):
+    media = PersonalizationMedia.objects.create(
+        media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        file='personalizations/reusable-image.jpg', file_size_kb=100, is_used=True,
+    )
+    base_order_data['items'][0].update(
+        has_huella=True, huella_type=OrderItem.HuellaType.IMAGE, huella_media=media,
+    )
+
+    order = OrderService.create_order(base_order_data)
+
+    assert order.items.get().huella_media_id == media.pk
+    assert PersonalizationMedia.objects.get(pk=media.pk).is_used is True

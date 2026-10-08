@@ -75,6 +75,24 @@ class OrderService:
         items_data = validated_data.pop('items')
         payment_mode = validated_data.pop('payment_mode', Order.PaymentMode.DEPOSIT)
 
+        # Validation may precede the daily cleanup. Lock the same rows as that
+        # task before creating any order/foreign key, in a stable order.
+        media_ids = {
+            media.pk for item in items_data for field in ('huella_media', 'audio_media')
+            if (media := item.get(field)) is not None
+        }
+        if media_ids:
+            current_media = {
+                media.pk: media for media in PersonalizationMedia.objects.select_for_update()
+                .filter(pk__in=media_ids).order_by('pk')
+            }
+            if media_ids != current_media.keys():
+                raise ValueError('Un archivo de personalización ya fue retirado. Vuelve a subirlo para completar tu pedido.')
+            for item in items_data:
+                for field in ('huella_media', 'audio_media'):
+                    if item.get(field) is not None:
+                        item[field] = current_media[item[field].pk]
+
         product_subtotal = 0
         weighted_deposit_raw = 0.0
         weighted_full_discount_raw = 0.0

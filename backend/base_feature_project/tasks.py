@@ -20,6 +20,7 @@ from io import StringIO
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from huey import crontab
 from huey.contrib.djhuey import db_periodic_task, db_task
@@ -283,18 +284,26 @@ def cleanup_unused_media_files():
     """
     from base_feature_app.models import PersonalizationMedia
     cutoff = timezone.now() - timedelta(hours=48)
-    old_unused = PersonalizationMedia.objects.filter(is_used=False, created_at__lt=cutoff)
+    old_unused = PersonalizationMedia.objects.filter(
+        is_used=False, created_at__lt=cutoff,
+    ).order_by('pk').values_list('pk', flat=True)
     deleted = 0
     failed = 0
-    for media in old_unused:
-        try:
-            media.file.delete(save=False)
-        except Exception:
-            # Keep the durable reference so the next scheduled run can retry.
-            failed += 1
-            continue
-        media.delete()
-        deleted += 1
+    for media_id in old_unused:
+        with transaction.atomic():
+            media = PersonalizationMedia.objects.select_for_update().filter(pk=media_id).first()
+            if media is None or media.is_used or media.created_at >= cutoff:
+                continue
+            if media.huella_items.exists() or media.audio_items.exists():
+                continue
+            try:
+                media.file.delete(save=False)
+            except Exception:
+                # Keep the durable reference so the next scheduled run can retry.
+                failed += 1
+                continue
+            media.delete()
+            deleted += 1
     if failed:
         order_logger.warning(
             'Unused personalization media cleanup incomplete: removed=%d failed=%d.',
