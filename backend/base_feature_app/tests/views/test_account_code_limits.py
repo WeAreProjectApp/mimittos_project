@@ -124,7 +124,7 @@ def _parallel_posts(route, payload):
             lock_wait = _observe_lock_wait(connection_ids['second'], connection_ids['first'])
         finally:
             release_first.set()
-        return [first.result(timeout=15), second.result(timeout=15)], lock_wait
+    return [first.result(timeout=15), second.result(timeout=15)], lock_wait
 
 
 @pytest.mark.django_db
