@@ -1,4 +1,5 @@
 import uuid
+from functools import partial
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
@@ -73,6 +74,24 @@ class OrderService:
     def create_order(validated_data: dict, user=None) -> Order:
         items_data = validated_data.pop('items')
         payment_mode = validated_data.pop('payment_mode', Order.PaymentMode.DEPOSIT)
+
+        # Validation may precede the daily cleanup. Lock the same rows as that
+        # task before creating any order/foreign key, in a stable order.
+        media_ids = {
+            media.pk for item in items_data for field in ('huella_media', 'audio_media')
+            if (media := item.get(field)) is not None
+        }
+        if media_ids:
+            current_media = {
+                media.pk: media for media in PersonalizationMedia.objects.select_for_update()
+                .filter(pk__in=media_ids).order_by('pk')
+            }
+            if media_ids != current_media.keys():
+                raise ValueError('Un archivo de personalización ya fue retirado. Vuelve a subirlo para completar tu pedido.')
+            for item in items_data:
+                for field in ('huella_media', 'audio_media'):
+                    if item.get(field) is not None:
+                        item[field] = current_media[item[field].pk]
 
         product_subtotal = 0
         weighted_deposit_raw = 0.0
@@ -177,10 +196,16 @@ class OrderService:
         return order
 
     @staticmethod
+    @transaction.atomic
     def update_status(order: Order, new_status: str, changed_by=None, notes: str = '') -> Order:
         from base_feature_app.services.notification_service import NotificationService
 
+        # Callers may have loaded the order before a provider request or an
+        # administrative change. Serialize against the current persisted row.
+        order = Order.objects.select_for_update().get(pk=order.pk)
         previous_status = order.status
+        if previous_status == new_status:
+            return order
         order.status = new_status
         order.save(update_fields=['status', 'updated_at'])
 
@@ -192,7 +217,10 @@ class OrderService:
             notes=notes,
         )
 
-        NotificationService.notify_status_change(order, new_status)
+        transaction.on_commit(
+            partial(NotificationService.notify_status_change, order, new_status),
+            robust=True,
+        )
 
         return order
 
