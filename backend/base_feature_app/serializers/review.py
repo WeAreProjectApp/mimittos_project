@@ -4,12 +4,17 @@ from base_feature_app.models import Review
 
 
 class ReviewSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source='user.email', read_only=True)
+    is_mine = serializers.SerializerMethodField()
     user_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
-        fields = ['id', 'user_email', 'user_name', 'rating', 'comment', 'created_at']
+        fields = ('id', 'is_mine', 'user_name', 'rating', 'comment', 'created_at')
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and obj.user_id == user.pk)
 
     def get_user_name(self, obj):
         return obj.user.first_name or obj.user.email.split('@')[0]

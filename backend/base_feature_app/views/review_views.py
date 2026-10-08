@@ -18,7 +18,7 @@ def peluch_reviews(request, slug: str):
 
     if request.method == 'GET':
         reviews = Review.objects.filter(peluch=peluch, is_approved=True).select_related('user')
-        serializer = ReviewSerializer(reviews, many=True)
+        serializer = ReviewSerializer(reviews, many=True, context={'request': request})
         return Response(serializer.data)
 
     if not request.user.is_authenticated:
@@ -47,7 +47,7 @@ def peluch_reviews(request, slug: str):
     except Exception as exc:
         return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response(ReviewSerializer(review).data, status=status.HTTP_201_CREATED)
+    return Response(ReviewSerializer(review, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
@@ -78,4 +78,4 @@ def approve_review(request, review_id: int):
     review.save(update_fields=['is_approved'])
     ReviewService.update_peluch_rating(review.peluch)
 
-    return Response(ReviewSerializer(review).data)
+    return Response(ReviewSerializer(review, context={'request': request}).data)

@@ -12,6 +12,16 @@ from base_feature_app.models import Order, OrderItem, PageView, Peluch
 EXPORT_ORDER_CHUNK_SIZE = 100
 
 
+def _csv_safe_cell(value):
+    """Keep untrusted text from becoming a formula when opening an export."""
+    if isinstance(value, str) and (
+        value.startswith(('\t', '\r', '\n'))
+        or value.lstrip().startswith(('=', '+', '-', '@', '＝', '＋', '－', '＠'))
+    ):
+        return "'" + value
+    return value
+
+
 class AnalyticsService:
 
     @staticmethod
@@ -175,7 +185,7 @@ class AnalyticsService:
 
         for order in orders.iterator(chunk_size=EXPORT_ORDER_CHUNK_SIZE):
             for item in order.items.all():
-                writer.writerow([
+                row = [
                     order.order_number,
                     order.created_at.strftime('%Y-%m-%d %H:%M'),
                     order.customer_name,
@@ -193,6 +203,7 @@ class AnalyticsService:
                     item.color.name,
                     item.quantity,
                     item.unit_price,
-                ])
+                ]
+                writer.writerow([_csv_safe_cell(value) for value in row])
 
         return output.getvalue().encode('utf-8-sig')
