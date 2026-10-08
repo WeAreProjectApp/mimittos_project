@@ -171,10 +171,10 @@ test.describe('Complete Purchase Flow', () => {
     await page.getByRole('button', { name: /^Agregar/ }).click();
     await expect(page.getByText('¡Agregado al carrito!')).toBeVisible();
     await page.goto('/checkout');
-    await page.getByText('Nombre completo', { exact: true }).locator('..').getByRole('textbox').fill('Ana López');
-    await page.getByText('Correo electrónico', { exact: true }).locator('..').getByRole('textbox').fill('ana@example.com');
-    await page.getByText('Celular', { exact: true }).locator('..').getByRole('textbox').fill('3001234567');
-    await page.getByPlaceholder('Calle 50 # 40-20, Apto 301').fill('Calle 50 # 40-20');
+    await page.getByLabel('Nombre completo', { exact: true }).fill('Ana López');
+    await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
+    await page.getByLabel('Celular', { exact: true }).fill('3001234567');
+    await page.getByLabel('Dirección completa', { exact: true }).fill('Calle 50 # 40-20');
     await page.getByRole('checkbox').check();
 
     let releaseResponse!: () => void;

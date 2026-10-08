@@ -43,9 +43,8 @@ async function addProduct(page: Page, product: PeluchDetail) {
   await expect(page.getByText('¡Agregado al carrito!')).toBeVisible();
 }
 
-function cartLine(page: Page, title: string) {
-  // quality: allow-fragile-selector (the named product heading scopes its cart row; the page has no labelled row container).
-  return page.getByRole('main').getByRole('heading', { name: title, exact: true }).locator('..').locator('..');
+function cartLine(page: Page, product: PeluchDetail) {
+  return page.getByTestId(`cart-item-${product.id}-${SIZE.id}-${COLOR.id}`);
 }
 
 function subtotal(page: Page) {
@@ -65,8 +64,8 @@ test.describe('Shopping Cart', () => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
 
-    await expect(cartLine(page, BEAR.title)).toContainText('Mediano');
-    await expect(cartLine(page, BEAR.title)).toContainText('Coral');
+    await expect(cartLine(page, BEAR)).toContainText('Mediano');
+    await expect(cartLine(page, BEAR)).toContainText('Coral');
     await expect(page.getByRole('button', { name: 'Eliminar', exact: true })).toHaveCount(1);
     await expect(page.getByText('Tu carrito está vacío', { exact: true })).toBeHidden();
   });
@@ -80,7 +79,7 @@ test.describe('Shopping Cart', () => {
   test('updates quantity through the increment control', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
-    const line = cartLine(page, BEAR.title);
+    const line = cartLine(page, BEAR);
     const quantity = line.getByRole('button', { name: '+', exact: true }).locator('..');
 
     await line.getByRole('button', { name: '+', exact: true }).click();
@@ -94,7 +93,7 @@ test.describe('Shopping Cart', () => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
 
-    await cartLine(page, BEAR.title).getByRole('button', { name: 'Eliminar', exact: true }).click();
+    await cartLine(page, BEAR).getByRole('button', { name: 'Eliminar', exact: true }).click();
 
     await expect(page.getByText('Tu carrito está vacío', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: BEAR.title, exact: true })).toHaveCount(0);
@@ -111,12 +110,12 @@ test.describe('Shopping Cart', () => {
   test('persists the updated quantity across a reload', { tag: [...CART_PERSIST, '@outcome:display'] }, async ({ page }) => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
-    await cartLine(page, BEAR.title).getByRole('button', { name: '+', exact: true }).click();
+    await cartLine(page, BEAR).getByRole('button', { name: '+', exact: true }).click();
     await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
 
     await page.reload();
 
-    const quantity = cartLine(page, BEAR.title).getByRole('button', { name: '+', exact: true }).locator('..');
+    const quantity = cartLine(page, BEAR).getByRole('button', { name: '+', exact: true }).locator('..');
     await expect(quantity.getByText('2', { exact: true })).toHaveText('2');
     await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
     await expect(page.getByRole('button', { name: 'Eliminar', exact: true })).toHaveCount(1);
@@ -125,7 +124,7 @@ test.describe('Shopping Cart', () => {
   test('keeps quantity at one when decremented', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
-    const line = cartLine(page, BEAR.title);
+    const line = cartLine(page, BEAR);
 
     await line.getByRole('button', { name: '−', exact: true }).click();
 
@@ -138,7 +137,7 @@ test.describe('Shopping Cart', () => {
   test('decrements quantity through the decrement control', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
     await addProduct(page, BEAR);
     await page.goto('/cart');
-    const line = cartLine(page, BEAR.title);
+    const line = cartLine(page, BEAR);
     await line.getByRole('button', { name: '+', exact: true }).click();
     await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
 
