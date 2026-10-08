@@ -532,6 +532,7 @@ def test_update_status_rolls_back_a_failed_history(existing_order, mailoutbox, d
 
 @pytest.mark.django_db
 def test_update_status_repetition_has_one_history(existing_order, mailoutbox, django_capture_on_commit_callbacks):
+    """Record one history entry for repeated updates to the same status."""
     with django_capture_on_commit_callbacks(execute=True):
         OrderService.update_status(existing_order, Order.Status.SHIPPED)
         OrderService.update_status(existing_order, Order.Status.SHIPPED)
@@ -542,6 +543,7 @@ def test_update_status_repetition_has_one_history(existing_order, mailoutbox, dj
 
 @pytest.mark.django_db
 def test_update_status_records_the_current_previous_status(existing_order):
+    """Record the persisted previous status instead of a stale instance value."""
     OrderService.update_status(existing_order, Order.Status.IN_PRODUCTION)
 
     OrderService.update_status(existing_order, Order.Status.SHIPPED)
@@ -552,6 +554,7 @@ def test_update_status_records_the_current_previous_status(existing_order):
 
 @pytest.mark.django_db
 def test_create_order_rejects_a_removed_media_without_partial_order(base_order_data):
+    """Reject removed personalization before creating any order rows."""
     media = PersonalizationMedia.objects.create(
         media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
         file='personalizations/removed-image.jpg', file_size_kb=100,
@@ -572,6 +575,7 @@ def test_create_order_rejects_a_removed_media_without_partial_order(base_order_d
 
 @pytest.mark.django_db
 def test_create_order_preserves_reusable_media(base_order_data):
+    """Allow previously used personalization to be linked to another order."""
     media = PersonalizationMedia.objects.create(
         media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
         file='personalizations/reusable-image.jpg', file_size_kb=100, is_used=True,
