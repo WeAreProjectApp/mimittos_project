@@ -28,12 +28,12 @@ from base_feature_app.services.order_access_service import (
     ORDER_ACCESS_SALT,
     OrderAccessService,
 )
-from base_feature_app.utils.media_access import issue_media_token
 from base_feature_app.tests.factories import (
     GlobalColorFactory,
     GlobalSizeFactory,
     PeluchFactory,
 )
+from base_feature_app.utils.media_access import issue_media_token
 
 MAX_ORDER_READ_QUERIES = 4
 

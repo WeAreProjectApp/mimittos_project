@@ -1,11 +1,13 @@
+"""Test Wompi signatures and transactional payment updates."""
+
 import hashlib
 from datetime import datetime
+from threading import Event, Thread
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.db import IntegrityError, close_old_connections, connection, connections
 from django.test import override_settings
-from threading import Event, Thread
 
 from base_feature_app.models import Order, WompiTransaction
 from base_feature_app.services.wompi_service import WompiService
@@ -54,6 +56,7 @@ def _make_event_data(secret: str, tx_id: str = 'tx-001', status: str = 'APPROVED
 
 @pytest.fixture
 def existing_order(db):
+    """Create a pending order for Wompi service tests."""
     return Order.objects.create(
         order_number='MMT-20260420-W001',
         customer_email='test@example.com',
@@ -71,6 +74,7 @@ def existing_order(db):
 
 @pytest.fixture
 def wompi_tx(db, existing_order):
+    """Create the order's pending Wompi transaction."""
     return WompiTransaction.objects.create(
         order=existing_order,
         reference='MMT-20260420-W001-ABCD1234',
@@ -86,6 +90,7 @@ def wompi_tx(db, existing_order):
 @pytest.mark.django_db
 @override_settings(WOMPI_EVENTS_SECRET='secret123')
 def test_verify_signature_returns_true_for_valid_checksum():
+    """Accept an event carrying a valid provider checksum."""
     event_data = _make_event_data('secret123')
     assert WompiService.verify_signature(event_data) is True
 
@@ -93,6 +98,7 @@ def test_verify_signature_returns_true_for_valid_checksum():
 @pytest.mark.django_db
 @override_settings(WOMPI_EVENTS_SECRET='secret123')
 def test_verify_signature_returns_false_for_tampered_checksum():
+    """Reject an event whose checksum has been tampered with."""
     event_data = _make_event_data('secret123')
     event_data['signature']['checksum'] = 'bad' * 16
     assert WompiService.verify_signature(event_data) is False
@@ -101,6 +107,7 @@ def test_verify_signature_returns_false_for_tampered_checksum():
 @pytest.mark.django_db
 @override_settings(WOMPI_EVENTS_SECRET='correct_secret')
 def test_verify_signature_returns_false_for_wrong_secret():
+    """Reject a checksum signed with another events secret."""
     event_data = _make_event_data('wrong_secret')
     assert WompiService.verify_signature(event_data) is False
 
@@ -108,6 +115,7 @@ def test_verify_signature_returns_false_for_wrong_secret():
 @pytest.mark.django_db
 @override_settings(WOMPI_EVENTS_SECRET='')
 def test_verify_signature_returns_false_when_secret_not_configured():
+    """Reject events when the events secret is not configured."""
     event_data = _make_event_data('any')
     assert WompiService.verify_signature(event_data) is False
 
@@ -115,6 +123,7 @@ def test_verify_signature_returns_false_when_secret_not_configured():
 @pytest.mark.django_db
 @override_settings(WOMPI_EVENTS_SECRET='secret123')
 def test_verify_signature_returns_false_for_malformed_event():
+    """Reject events with missing signature fields."""
     assert WompiService.verify_signature({}) is False
     assert WompiService.verify_signature({'signature': {}}) is False
 
@@ -125,6 +134,7 @@ def test_verify_signature_returns_false_for_malformed_event():
 
 @pytest.mark.django_db
 def test_process_event_ignores_non_transaction_event(wompi_tx):
+    """Leave the payment unchanged for unrelated provider event types."""
     event_data = {'event': 'charge.created', 'data': {}}
     WompiService.process_event(event_data)
     wompi_tx.refresh_from_db()
@@ -257,6 +267,7 @@ def test_process_event_stores_payment_method_type(wompi_tx):
 @pytest.mark.django_db
 @override_settings(ADMIN_EMAIL='admin@example.com')
 def test_process_event_repetition_sends_one_confirmation(wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
+    """Deliver one confirmation for repeated approval events."""
     event = _make_event_data('test', reference=wompi_tx.reference)
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -272,6 +283,7 @@ def test_process_event_repetition_sends_one_confirmation(wompi_tx, mailoutbox, d
 @pytest.mark.django_db
 @override_settings(ADMIN_EMAIL='admin@example.com')
 def test_payment_history_failure_can_be_retried(wompi_tx, mailoutbox, django_capture_on_commit_callbacks):
+    """Retry an approval after a real history persistence failure."""
     data = _make_event_data('test', reference=wompi_tx.reference)['data']['transaction']
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -294,6 +306,7 @@ def test_payment_history_failure_can_be_retried(wompi_tx, mailoutbox, django_cap
 @pytest.mark.django_db
 @pytest.mark.parametrize('late_status', ['PENDING', 'DECLINED', 'VOIDED', 'ERROR'])
 def test_late_event_retains_approval(wompi_tx, late_status):
+    """Keep an approved payment after a late provider event."""
     WompiService.process_event(_make_event_data('test', reference=wompi_tx.reference))
 
     WompiService.process_event(_make_event_data('test', status=late_status, reference=wompi_tx.reference))
@@ -307,6 +320,7 @@ def test_late_event_retains_approval(wompi_tx, late_status):
 @pytest.mark.django_db
 @pytest.mark.parametrize('terminal_status', ['DECLINED', 'VOIDED', 'ERROR'])
 def test_late_pending_retains_a_terminal_transaction(wompi_tx, terminal_status):
+    """Retain a terminal payment when a pending event arrives late."""
     WompiService.process_event(_make_event_data('test', status=terminal_status, reference=wompi_tx.reference))
 
     WompiService.process_event(_make_event_data('test', status='PENDING', reference=wompi_tx.reference))
@@ -317,6 +331,7 @@ def test_late_pending_retains_a_terminal_transaction(wompi_tx, terminal_status):
 
 @pytest.mark.django_db
 def test_a_new_payment_attempt_can_be_pending(wompi_tx):
+    """Allow a newly initiated payment attempt to remain pending."""
     WompiService.process_event(_make_event_data('test', status='DECLINED', reference=wompi_tx.reference))
 
     WompiService.apply_transaction_data(wompi_tx.reference, {
@@ -330,6 +345,7 @@ def test_a_new_payment_attempt_can_be_pending(wompi_tx):
 
 @pytest.mark.django_db
 def test_an_event_for_an_older_attempt_is_ignored(wompi_tx):
+    """Ignore pending events from an earlier payment attempt."""
     wompi_tx.wompi_id = 'current-attempt'
     wompi_tx.save(update_fields=['wompi_id'])
 
@@ -346,6 +362,7 @@ def test_an_event_for_an_older_attempt_is_ignored(wompi_tx):
 
 @pytest.mark.django_db
 def test_approval_preserves_administrative_progress(wompi_tx):
+    """Preserve administrative progress when payment is approved."""
     from base_feature_app.services.order_service import OrderService
     OrderService.update_status(wompi_tx.order, Order.Status.IN_PRODUCTION)
 
@@ -407,6 +424,7 @@ def _run_competing_approvals(event):
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='Row-lock contention requires independent MySQL connections.')
 @override_settings(ADMIN_EMAIL='admin@example.com')
 def test_concurrent_approvals_have_one_confirmation(wompi_tx, mailoutbox):
+    """Confirm a payment once across competing MySQL connections."""
     event = _make_event_data('test', reference=wompi_tx.reference)
 
     failures, connection_ids = _run_competing_approvals(event)
@@ -422,6 +440,7 @@ def test_concurrent_approvals_have_one_confirmation(wompi_tx, mailoutbox):
 
 @pytest.mark.django_db
 def test_process_transaction_records_real_confirmation(wompi_tx):
+    """Persist a provider approval with the real order history."""
     response = MagicMock(status_code=201)
     response.json.return_value = {'data': {'id': 'current-id', 'status': 'APPROVED', 'payment_method_type': 'CARD'}}
 
@@ -437,6 +456,7 @@ def test_process_transaction_records_real_confirmation(wompi_tx):
 
 @pytest.mark.django_db
 def test_process_transaction_retains_an_earlier_webhook_approval(wompi_tx):
+    """Keep a webhook approval when the POST response is delayed."""
     def provider_reply(*args, **kwargs):
         WompiService.process_event(_make_event_data('test', tx_id='current-id', reference=wompi_tx.reference))
         response = MagicMock(status_code=201)
@@ -454,6 +474,7 @@ def test_process_transaction_retains_an_earlier_webhook_approval(wompi_tx):
 
 @pytest.mark.django_db
 def test_async_url_poll_retains_a_concurrent_approval(wompi_tx):
+    """Preserve concurrent approval while obtaining the bank redirect."""
     initial = MagicMock(status_code=201)
     initial.json.return_value = {'data': {'id': 'current-id', 'status': 'PENDING', 'payment_method_type': 'PSE'}}
 
@@ -480,6 +501,7 @@ def test_async_url_poll_retains_a_concurrent_approval(wompi_tx):
 
 @pytest.mark.django_db
 def test_process_transaction_retains_the_missing_status_error(wompi_tx):
+    """Preserve the existing error for a response without a status."""
     response = MagicMock(status_code=201)
     response.json.return_value = {'data': {'id': 'current-id'}}
 
@@ -499,6 +521,7 @@ def test_process_transaction_retains_the_missing_status_error(wompi_tx):
 @patch('base_feature_app.services.wompi_service.requests.post')
 @override_settings(WOMPI_API_URL='https://sandbox.wompi.co/v1', WOMPI_PRIVATE_KEY='prv_test_key', FRONTEND_URL='http://localhost:3000')
 def test_create_checkout_returns_checkout_url(mock_post, wompi_tx):
+    """Return the hosted checkout URL received from Wompi."""
     mock_response = MagicMock()
     mock_response.json.return_value = {'data': {'id': 'testlink'}}
     mock_response.raise_for_status.return_value = None
@@ -513,6 +536,7 @@ def test_create_checkout_returns_checkout_url(mock_post, wompi_tx):
 @patch('base_feature_app.services.wompi_service.requests.post')
 @override_settings(WOMPI_API_URL='https://sandbox.wompi.co/v1', WOMPI_PRIVATE_KEY='prv_test_key', FRONTEND_URL='http://localhost:3000')
 def test_create_checkout_saves_url_to_transaction(mock_post, wompi_tx):
+    """Persist a hosted checkout URL on its payment transaction."""
     mock_response = MagicMock()
     mock_response.json.return_value = {'data': {'id': 'saved'}}
     mock_response.raise_for_status.return_value = None
@@ -528,6 +552,7 @@ def test_create_checkout_saves_url_to_transaction(mock_post, wompi_tx):
 @patch('base_feature_app.services.wompi_service.requests.post', side_effect=Exception('Connection error'))
 @override_settings(WOMPI_API_URL='https://sandbox.wompi.co/v1', WOMPI_PRIVATE_KEY='prv_test_key', FRONTEND_URL='http://localhost:3000')
 def test_create_checkout_raises_on_request_failure(mock_post, wompi_tx):
+    """Propagate a gateway failure while creating a hosted checkout."""
     with pytest.raises(Exception, match='Connection error'):
         WompiService.create_checkout(wompi_tx)
     wompi_tx.refresh_from_db()
@@ -544,6 +569,7 @@ def test_create_checkout_raises_on_request_failure(mock_post, wompi_tx):
     WOMPI_INTEGRITY_SECRET='prod_integrity_x', WOMPI_EVENTS_SECRET='prod_events_x',
 )
 def test_validate_config_returns_no_issues_when_aligned_to_production():
+    """Accept keys matching the production API environment."""
     assert WompiService.validate_config() == []
 
 
@@ -553,6 +579,7 @@ def test_validate_config_returns_no_issues_when_aligned_to_production():
     WOMPI_INTEGRITY_SECRET='test_integrity_x', WOMPI_EVENTS_SECRET='test_events_x',
 )
 def test_validate_config_flags_environment_mismatch():
+    """Report keys whose environment differs from the API URL."""
     issues = WompiService.validate_config()
     assert any('WOMPI_PUBLIC_KEY' in i and 'sandbox' in i and 'production' in i for i in issues)
 
@@ -563,4 +590,5 @@ def test_validate_config_flags_environment_mismatch():
     WOMPI_INTEGRITY_SECRET='prod_integrity_x', WOMPI_EVENTS_SECRET='prod_events_x',
 )
 def test_validate_config_flags_empty_key():
+    """Report a required Wompi key with an empty value."""
     assert 'WOMPI_PUBLIC_KEY is empty' in WompiService.validate_config()
