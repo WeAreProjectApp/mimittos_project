@@ -5,6 +5,36 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda orquestada de integridad — 2026-10-08
+
+- Códigos de cuenta: presupuesto persistente por cuenta/propósito, reenvío que
+  conserva límites e invalida códigos anteriores (`I-S-d69e950b3187`).
+- Pagos: transición bloqueada y conjunta, callbacks tras commit y conservación
+  de aprobaciones frente a respuestas o intentos atrasados (`I-O-8c2889fcadd4`).
+- Personalizaciones: compra y limpieza coordinadas con las filas actuales,
+  rechazo sin pedido parcial y retención ante fallo de storage
+  (`I-O-a19669ea9276`).
+- Las pruebas de autoría usan MySQL scratch; QA combinada y entrega exacta se
+  consultan en el registro `improvement-20261008-orquestada` del toolkit.
+- La migración aditiva `0016_passwordcode_attempt_budget` se aplica por deploy.
+
+Ruta de mejoras futuras con retorno, fuera del cupo de esta ronda:
+
+1. Corroborar nginx instalado y cerrar también URLs antiguas de personalización.
+2. Definir redirección bancaria antes de retirar polling que convierte pendientes
+   sin URL en error; conservar compatibilidad PSE/Bancolombia.
+3. Evitar escrituras parciales de categorías y productos, y alinear redondeo.
+4. Acotar las lecturas de respuesta PATCH de pedidos con precarga posterior al
+   cambio de historial.
+5. Corregir overlay, scroll y foco del menú al cambiar de ancho o usar teclado;
+   medir sidebar administrativo con una sesión o entorno aislado válido.
+6. Reescribir pruebas inoperantes de cantidades/carrito y probar los rechazos
+   visibles de envío de pago.
+
+Extraer fórmulas equivalentes, políticas JPEG coincidentes o capas nuevas por
+estilo quedó descartado por retorno insuficiente. Los callbacks y el orden de
+bloqueos tienen contrato documentado para evitar reintroducir las carreras.
+
 ## Privacidad de pedidos e imágenes — 2026-10-02
 
 - [x] Autorizar archivos de personalización por dueño real o capacidad firmada (`I-S-fcb336acb752`).

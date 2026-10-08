@@ -5,6 +5,34 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Integridad de cuentas, pagos y personalizaciones — 2026-10-08
+
+La ronda orquestada `improvement-20261008-orquestada` seleccionó tres causas:
+presupuesto persistente e invalidación de códigos de cuenta, asentamiento
+atómico e idempotente de pagos y coordinación entre compra y limpieza de
+medios. Seguridad y observabilidad implementaron exclusivamente sus archivos;
+el conductor aporta la migración aditiva y esta documentación.
+
+El esquema añade `PasswordCodeAttemptBudget` por usuario y propósito. Los
+límites y la vigencia se describen en `docs/methodology/architecture.md`.
+La migración pertenece al despliegue; las pruebas de la ronda usan bases
+MySQL scratch aisladas.
+
+Orden de bloqueos: usuario antes de presupuesto de código; pedido antes de
+transacción de pago; medios en orden estable de ID. Las notificaciones salen
+tras el commit. Las aprobaciones válidas entre intentos de pago no se
+descartan por llegar antes de la respuesta HTTP de creación del intento.
+
+Pruebas de autoría: seguridad 56 casos únicos; observabilidad 50 ejecuciones
+sobre el contenido corregido, incluidas carreras MySQL y webhooks firmados.
+La aceptación combinada y la entrega se registran en el reporte de la ronda
+del toolkit y sus PR; no se confunden con esas pruebas de autoría.
+
+Persisten candidatos fuera del cupo: acceso directo a personalizaciones según
+nginx registrado, polling bancario, escrituras parciales de catálogo,
+redondeo del frontend, lecturas PATCH y navegación pública. La revisión de
+todos los frentes fue dirigida, no una certificación global de madurez.
+
 ## Ronda de privacidad — 2026-10-02
 
 La sesión `improvement-order-privacy` trabaja desde `main` en un worktree propio.
