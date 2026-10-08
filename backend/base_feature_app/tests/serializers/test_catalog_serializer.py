@@ -1,4 +1,5 @@
 import pytest
+from django.db import IntegrityError
 from django_attachments.models import Library
 
 from base_feature_app.models import (
@@ -144,6 +145,76 @@ def test_category_update_keeps_explicit_slug(db):
 # ---------------------------------------------------------------------------
 # PeluchCreateUpdateSerializer
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_peluch_serializer_rejects_missing_size(cat):
+    serializer = PeluchCreateUpdateSerializer(data={
+        'title': 'Invalid size', 'slug': 'invalid-size', 'category': cat.pk,
+        'lead_description': 'Test', 'size_prices_data': [{'size_id': 999999, 'price': 50000}],
+    })
+
+    assert not serializer.is_valid()
+    assert 'size_prices_data' in serializer.errors
+
+
+@pytest.mark.django_db(transaction=True)
+def test_peluch_create_rolls_back_after_size_is_deleted(cat):
+    first_size = GlobalSize.objects.create(label='First', slug='first', cm='10cm')
+    deleted_size = GlobalSize.objects.create(label='Deleted', slug='deleted', cm='20cm')
+    initial_galleries = set(Library.objects.values_list('pk', flat=True))
+    serializer = PeluchCreateUpdateSerializer(data={
+        'title': 'Interrupted', 'slug': 'interrupted', 'category': cat.pk,
+        'lead_description': 'Test',
+        'size_prices_data': [
+            {'size_id': first_size.pk, 'price': 50000},
+            {'size_id': deleted_size.pk, 'price': 60000},
+        ],
+    })
+    assert serializer.is_valid(), serializer.errors
+    deleted_size.delete()
+
+    with pytest.raises(IntegrityError):
+        serializer.save()
+
+    assert not Peluch.objects.filter(slug='interrupted').exists()
+    assert set(Library.objects.values_list('pk', flat=True)) == initial_galleries
+    assert not PeluchSizePrice.objects.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_peluch_update_rolls_back_after_size_is_deleted(cat):
+    gallery = Library.objects.create(title='Existing')
+    peluch = Peluch.objects.create(title='Original', slug='original', category=cat,
+                                   lead_description='Original', gallery=gallery)
+    old_color = GlobalColor.objects.create(name='Old', slug='old', hex_code='#112233')
+    new_color = GlobalColor.objects.create(name='New', slug='new', hex_code='#334455')
+    peluch.available_colors.add(old_color)
+    first_size = GlobalSize.objects.create(label='First', slug='first', cm='10cm')
+    deleted_size = GlobalSize.objects.create(label='Deleted', slug='deleted', cm='20cm')
+    price = PeluchSizePrice.objects.create(peluch=peluch, size=first_size, price=40000)
+    serializer = PeluchCreateUpdateSerializer(peluch, data={
+        'lead_description': 'Changed', 'available_color_ids': [new_color.pk],
+        'size_prices_data': [
+            {'size_id': first_size.pk, 'price': 50000, 'is_available': True,
+             'deposit_percentage': 50, 'full_payment_discount_pct': 0,
+             'free_shipping': False, 'shipping_cost': 0},
+            {'size_id': deleted_size.pk, 'price': 60000, 'is_available': True,
+             'deposit_percentage': 50, 'full_payment_discount_pct': 0,
+             'free_shipping': False, 'shipping_cost': 0},
+        ],
+    }, partial=True)
+    assert serializer.is_valid(), serializer.errors
+    deleted_size.delete()
+
+    with pytest.raises(IntegrityError):
+        serializer.save()
+
+    peluch.refresh_from_db()
+    price.refresh_from_db()
+    assert peluch.lead_description == 'Original'
+    assert list(peluch.available_colors.values_list('pk', flat=True)) == [old_color.pk]
+    assert price.price == 40000
 
 @pytest.fixture
 def cat(db):
