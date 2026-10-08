@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch
+from django.db.models import Prefetch, prefetch_related_objects
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -85,6 +85,16 @@ def _read_items_prefetch():
     ))
 
 
+def _prefetch_order_detail(order):
+    """Load response relations on the instance returned by the mutation."""
+    prefetch_related_objects(
+        [order],
+        'payment',
+        _read_items_prefetch(),
+        Prefetch('status_history', queryset=OrderStatusHistory.objects.select_related('changed_by')),
+    )
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def orders_list(request):
@@ -148,6 +158,7 @@ def update_order_status(request, order_number: str):
         changed_by=request.user,
         notes=serializer.validated_data.get('notes', ''),
     )
+    _prefetch_order_detail(order)
     return Response(OrderDetailSerializer(order, context={'request': request}).data)
 
 
@@ -170,4 +181,5 @@ def update_order_tracking(request, order_number: str):
     order.shipping_carrier = serializer.validated_data.get('shipping_carrier', order.shipping_carrier)
     order.save(update_fields=['tracking_number', 'shipping_carrier', 'updated_at'])
 
+    _prefetch_order_detail(order)
     return Response(OrderDetailSerializer(order, context={'request': request}).data)
