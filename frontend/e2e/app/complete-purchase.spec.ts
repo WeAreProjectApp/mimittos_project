@@ -1,4 +1,5 @@
 import { test, expect } from '../test-with-coverage';
+import type { PeluchDetail } from '../../lib/types';
 import { waitForPageLoad, testCheckoutData } from '../fixtures';
 import { PURCHASE_COMPLETE_FLOW, PURCHASE_MULTIPLE_ITEMS, PURCHASE_DISABLED_EMPTY_CART, PURCHASE_LOADING_STATE, HOME_PRODUCT_CAROUSEL } from '../helpers/flow-tags';
 
@@ -151,33 +152,56 @@ test.describe('Complete Purchase Flow', () => {
     await expect(submitBtn).toBeDisabled();
   });
 
-  test('should show loading state during form submission', { tag: [...PURCHASE_LOADING_STATE] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('recovers checkout after a rejected pending submission', { tag: [...PURCHASE_LOADING_STATE, '@outcome:display', '@outcome:failure'] }, async ({ page }) => {
+    // Fails if a pending HTTP request does not lock submit or a rejection leaves checkout unusable.
+    const product: PeluchDetail = {
+      id: 11, title: 'Oso para checkout', slug: 'oso-checkout', category_name: 'Osos', category_slug: 'osos',
+      lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 1,
+      min_price: 80000, discounted_min_price: 80000, gallery_urls: [], average_rating: 0, review_count: 0,
+      has_huella: false, has_corazon: false, has_audio: false, description: [], specifications: {}, care_instructions: [],
+      category: { id: 1, name: 'Osos', slug: 'osos', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null },
+      available_colors: [{ id: 31, name: 'Coral', slug: 'coral', hex_code: '#d4848a', sort_order: 1, preview_url: null, image_count: 0, images: [] }],
+      size_prices: [{ id: 1, size: { id: 21, label: 'Mediano', slug: 'mediano', cm: '30 cm', sort_order: 1 }, price: 80000,
+        is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
+      view_count: 0, huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '',
+    };
+    await page.route('**/api/peluches/oso-checkout/', (route) => route.fulfill({ json: product }));
+    await page.route('**/api/peluches/oso-checkout/reviews/', (route) => route.fulfill({ json: [] }));
+    await page.goto('/peluches/oso-checkout');
+    await page.getByRole('button', { name: /^Agregar/ }).click();
+    await expect(page.getByText('¡Agregado al carrito!')).toBeVisible();
+    await page.goto('/checkout');
+    await page.getByLabel('Nombre completo', { exact: true }).fill('Ana López');
+    await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
+    await page.getByLabel('Celular', { exact: true }).fill('3001234567');
+    await page.getByLabel('Dirección completa', { exact: true }).fill('Calle 50 # 40-20');
+    await page.getByRole('checkbox').check();
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
+    let releaseResponse!: () => void;
+    const heldResponse = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    let requests = 0;
+    await page.route('**/api/orders/', async (route) => {
+      requests += 1;
+      await heldResponse;
+      await route.fulfill({ status: 502, json: { detail: 'No pudimos procesar el pedido. Intenta de nuevo.' } });
+    });
+    const submitted = page.waitForRequest((request) => request.url().endsWith('/api/orders/') && request.method() === 'POST');
+    await page.getByRole('button', { name: /^Ir a pagar/ }).click();
+    await submitted;
 
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) { await addBtn.click(); await page.waitForLoadState('domcontentloaded'); }
-
-      await page.goto('/checkout');
-      await waitForPageLoad(page);
-
-      const termsCheckbox = page.locator('input[type="checkbox"]');
-      if (await termsCheckbox.isVisible()) { await termsCheckbox.click(); }
-
-      const submitBtn = page.locator('button[type="submit"]');
-      await expect(submitBtn).toBeEnabled();
-
-      await submitBtn.click();
-      // Loading text may appear briefly before navigation or error
-      await page.waitForURL(/.*/, { timeout: 5000 }).catch(() => {});
+    try {
+      await expect(page.getByRole('button', { name: 'Procesando...', exact: true })).toBeDisabled();
+      expect(requests).toBe(1);
+    } finally {
+      releaseResponse();
     }
+    await expect(page.getByText('No pudimos procesar el pedido. Intenta de nuevo.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Ir a pagar/ })).toBeEnabled();
+    await expect(page.getByRole('heading', { name: 'Tu pedido', exact: true }).locator('..')).toContainText(product.title);
+    const retried = page.waitForRequest((request) => request.url().endsWith('/api/orders/') && request.method() === 'POST');
+    await page.getByRole('button', { name: /^Ir a pagar/ }).click();
+    await retried;
+    await expect(page.getByText('No pudimos procesar el pedido. Intenta de nuevo.', { exact: true })).toBeVisible();
+    expect(requests).toBe(2);
   });
 });

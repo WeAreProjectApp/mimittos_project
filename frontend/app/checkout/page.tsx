@@ -166,9 +166,9 @@ export default function CheckoutPage() {
               <h3 style={cardHeadStyle}><span style={cardNumStyle}>1</span> Contacto</h3>
               <p style={{ color: 'var(--gray-warm)', fontSize: 14, marginBottom: 20 }}>Usaremos estos datos para enviarte notificaciones sobre tu pedido</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
-                <div style={fieldWrap}><label style={fieldLabel}>Nombre completo</label><input value={name} onChange={(e) => setName(e.target.value)} style={fieldInput} required /></div>
-                <div style={fieldWrap}><label style={fieldLabel}>Correo electrónico</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldInput} required /></div>
-                <div style={fieldWrap}><label style={fieldLabel}>Celular</label><input value={phone} onChange={(e) => setPhone(e.target.value)} style={fieldInput} required /></div>
+                <div style={fieldWrap}><label htmlFor="checkout-name" style={fieldLabel}>Nombre completo</label><input id="checkout-name" value={name} onChange={(e) => setName(e.target.value)} style={fieldInput} required /></div>
+                <div style={fieldWrap}><label htmlFor="checkout-email" style={fieldLabel}>Correo electrónico</label><input type="email" id="checkout-email" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldInput} required /></div>
+                <div style={fieldWrap}><label htmlFor="checkout-phone" style={fieldLabel}>Celular</label><input id="checkout-phone" value={phone} onChange={(e) => setPhone(e.target.value)} style={fieldInput} required /></div>
               </div>
             </div>
 
@@ -178,27 +178,27 @@ export default function CheckoutPage() {
               <p style={{ color: 'var(--gray-warm)', fontSize: 14, marginBottom: 20 }}>¿A dónde le llevamos el abrazo?</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-[14px]">
                 <div style={fieldWrap}>
-                  <label style={fieldLabel}>Departamento</label>
-                  <select value={department} onChange={(e) => setDepartment(e.target.value)} style={fieldInput}>
+                  <label htmlFor="checkout-department" style={fieldLabel}>Departamento</label>
+                  <select id="checkout-department" value={department} onChange={(e) => setDepartment(e.target.value)} style={fieldInput}>
                     {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
                   </select>
                 </div>
                 <div style={fieldWrap}>
-                  <label style={fieldLabel}>Ciudad</label>
-                  <select value={city} onChange={(e) => setCity(e.target.value)} style={fieldInput} disabled={cities.length === 0}>
+                  <label htmlFor="checkout-city" style={fieldLabel}>Ciudad</label>
+                  <select id="checkout-city" value={city} onChange={(e) => setCity(e.target.value)} style={fieldInput} disabled={cities.length === 0}>
                     {cities.map((c) => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div style={fieldWrap}>
-                  <label style={fieldLabel}>Código postal</label>
-                  <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="050001" style={fieldInput} />
+                  <label htmlFor="checkout-postal-code" style={fieldLabel}>Código postal</label>
+                  <input id="checkout-postal-code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="050001" style={fieldInput} />
                 </div>
               </div>
               <div style={{ marginTop: 14 }}>
-                <div style={fieldWrap}><label style={fieldLabel}>Dirección completa</label><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Calle 50 # 40-20, Apto 301" style={fieldInput} required /></div>
+                <div style={fieldWrap}><label htmlFor="checkout-address" style={fieldLabel}>Dirección completa</label><input id="checkout-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Calle 50 # 40-20, Apto 301" style={fieldInput} required /></div>
               </div>
               <div style={{ marginTop: 14 }}>
-                <div style={fieldWrap}><label style={fieldLabel}>Notas para el pedido (opcional)</label><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instrucciones especiales..." style={fieldInput} /></div>
+                <div style={fieldWrap}><label htmlFor="checkout-notes" style={fieldLabel}>Notas para el pedido (opcional)</label><input id="checkout-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Instrucciones especiales..." style={fieldInput} /></div>
               </div>
             </div>
 
