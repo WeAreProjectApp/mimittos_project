@@ -70,3 +70,15 @@ def test_create_sale_returns_201_with_valid_payload(api_client, product):
 
     assert response.status_code == status.HTTP_201_CREATED
     assert Sale.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('id_offset', [0, 999])
+def test_sale_detail_rejects_authenticated_customer(authenticated_client, sale, id_offset):
+    """Keep another buyer's sale data behind staff authorization."""
+    response = authenticated_client.get(reverse('sale-detail', kwargs={'sale_id': sale.pk + id_offset}))
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'Admin access required.'}
+    sale.refresh_from_db()
+    assert (sale.email, sale.address, sale.sold_products.count()) == ('buyer@example.com', 'Addr', 1)

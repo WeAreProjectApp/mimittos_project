@@ -183,6 +183,31 @@ def test_reviews_list_returns_approved_reviews(api_client, peluch, approved_revi
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(('viewer', 'expected_is_mine'), [
+    ('anonymous', False), ('owner', True), ('other', False),
+])
+def test_reviews_list_uses_private_ownership_flag(api_client, peluch, approved_review, existing_user, viewer, expected_is_mine):
+    """Reveal only whether the current reader owns the public review."""
+    from django.contrib.auth import get_user_model
+
+    other = get_user_model().objects.create_user(email='other-reviewer@example.com', password='pass')
+    api_client.force_authenticate(user={'anonymous': None, 'owner': existing_user, 'other': other}[viewer])
+
+    response = api_client.get(f'/api/peluches/{peluch.slug}/reviews/')
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        'id': approved_review.pk,
+        'is_mine': expected_is_mine,
+        'user_name': 'user',
+        'rating': 5,
+        'comment': 'Excelente peluche',
+        'created_at': approved_review.created_at.isoformat().replace('+00:00', 'Z'),
+    }]
+    assert existing_user.email not in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_reviews_list_excludes_unapproved_reviews(api_client, peluch, pending_review):
     response = api_client.get(f'/api/peluches/{peluch.slug}/reviews/')
     assert response.status_code == 200
@@ -205,6 +230,8 @@ def test_create_review_returns_201_for_authenticated_user(auth_client, peluch, d
     response = auth_client.post(f'/api/peluches/{peluch.slug}/reviews/', payload)
     assert response.status_code == 201
     assert Review.objects.filter(peluch=peluch, rating=5).exists()
+    assert response.data['is_mine'] is True
+    assert 'user_email' not in response.data
 
 
 @pytest.mark.django_db
@@ -259,6 +286,8 @@ def test_approve_review_sets_is_approved(admin_client, pending_review):
     assert response.status_code == 200
     pending_review.refresh_from_db()
     assert pending_review.is_approved is True
+    assert response.data['is_mine'] is False
+    assert 'user_email' not in response.data
 
 
 @pytest.mark.django_db

@@ -1,4 +1,4 @@
-"""Query-budget coverage for the authenticated sale detail endpoint."""
+"""Query-budget coverage for the staff sale detail endpoint."""
 
 from io import BytesIO
 
@@ -71,17 +71,17 @@ def media_root(tmp_path):
 
 
 @pytest.mark.django_db
-def test_sale_detail_query_budget_preserves_gallery_urls(authenticated_client, media_root):
+def test_sale_detail_query_budget_preserves_gallery_urls(admin_client, media_root):
     """Falla si el detalle vuelve a consultar productos, galerías o adjuntos por cada venta."""
     sale = _create_sale()
     expected_one = _add_sold_products(sale, 1)
 
     with CaptureQueriesContext(connection) as one_product_queries:
-        one_product_response = authenticated_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
+        one_product_response = admin_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
 
     expected_fifty = expected_one | _add_sold_products(sale, 49, start=1)
     with CaptureQueriesContext(connection) as fifty_product_queries:
-        fifty_product_response = authenticated_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
+        fifty_product_response = admin_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
 
     assert one_product_response.status_code == 200
     assert fifty_product_response.status_code == 200
@@ -99,18 +99,18 @@ def test_sale_detail_query_budget_preserves_gallery_urls(authenticated_client, m
 
 
 @pytest.mark.django_db
-def test_sale_detail_returns_empty_sold_products(authenticated_client):
+def test_sale_detail_returns_empty_sold_products(admin_client):
     """Falla si la precarga convierte una venta válida sin productos en una respuesta no vacía o errónea."""
     sale = _create_sale()
 
-    response = authenticated_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
+    response = admin_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
 
     assert response.status_code == 200
     assert response.data['sold_products'] == []
 
 
 @pytest.mark.django_db
-def test_sale_detail_returns_empty_gallery_urls(authenticated_client):
+def test_sale_detail_returns_empty_gallery_urls(admin_client):
     """Falla si la precarga deja de representar como lista vacía una galería válida sin adjuntos."""
     sale = _create_sale()
     gallery = Library.objects.create(title='Empty sale gallery')
@@ -124,7 +124,7 @@ def test_sale_detail_returns_empty_gallery_urls(authenticated_client):
     )
     sale.sold_products.add(SoldProduct.objects.create(product=product, quantity=1))
 
-    response = authenticated_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
+    response = admin_client.get(reverse('sale-detail', kwargs={'sale_id': sale.id}))
 
     assert response.status_code == 200
     assert response.data['sold_products'][0]['product']['gallery_urls'] == []
