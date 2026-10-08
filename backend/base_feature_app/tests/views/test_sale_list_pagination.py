@@ -1,4 +1,4 @@
-"""Pagination and query-budget coverage for the authenticated sales list."""
+"""Pagination and query-budget coverage for the staff sales list."""
 
 import pytest
 from django.db import connection
@@ -42,25 +42,24 @@ def test_sales_list_rejects_anonymous_reader(api_client):
 
 
 @pytest.mark.django_db
-def test_sales_list_accepts_authenticated_customer(authenticated_client):
-    """Falla si el listado de ventas deja de estar disponible para un cliente autenticado."""
+def test_sales_list_rejects_authenticated_customer(authenticated_client):
+    """Reject a customer's attempt to read another buyer's sale."""
     sale = _sales(1, prefix='customer-access')[0]
 
     response = authenticated_client.get(reverse('sale-list'))
 
-    assert response.status_code == 200
-    assert response.json()['results'] == [{
-        'id': sale.id, 'email': 'customer-access-0@example.com', 'city': 'Bogotá',
-        'state': 'Cundinamarca', 'postal_code': '110000',
-    }]
+    assert response.status_code == 403
+    assert response.json() == {'detail': 'Admin access required.'}
+    sale.refresh_from_db()
+    assert sale.email == 'customer-access-0@example.com'
 
 
 @pytest.mark.django_db
-def test_sales_list_default_page_returns_envelope(authenticated_client):
+def test_sales_list_default_page_returns_envelope(admin_client):
     """Falla si la respuesta por defecto vuelve a ser un arreglo plano de ventas."""
     sale = _sales(1, prefix='default')[0]
 
-    response = authenticated_client.get(reverse('sale-list'))
+    response = admin_client.get(reverse('sale-list'))
 
     assert response.status_code == 200
     assert response.json() == {
@@ -75,11 +74,11 @@ def test_sales_list_default_page_returns_envelope(authenticated_client):
 
 
 @pytest.mark.django_db
-def test_sales_list_row_preserves_legacy_fields(authenticated_client):
+def test_sales_list_row_preserves_legacy_fields(admin_client):
     """Falla si una fila paginada pierde campos públicos heredados de una venta."""
     _sales(1, prefix='fields')
 
-    response = authenticated_client.get(reverse('sale-list'))
+    response = admin_client.get(reverse('sale-list'))
 
     assert response.status_code == 200
     assert set(response.json()['results'][0]) == {'id', 'email', 'city', 'state', 'postal_code'}
@@ -87,22 +86,22 @@ def test_sales_list_row_preserves_legacy_fields(authenticated_client):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('page_size', [1, 50, 100])
-def test_sales_list_honors_supported_page_size(authenticated_client, page_size):
+def test_sales_list_honors_supported_page_size(admin_client, page_size):
     """Falla si un tamaño de página permitido deja de limitar las filas entregadas."""
     _sales(100, prefix=f'size-{page_size}')
 
-    response = authenticated_client.get(reverse('sale-list'), {'page_size': page_size})
+    response = admin_client.get(reverse('sale-list'), {'page_size': page_size})
 
     assert response.status_code == 200
     assert len(response.json()['results']) == page_size
 
 
 @pytest.mark.django_db
-def test_sales_list_caps_oversized_page_size_at_one_hundred(authenticated_client):
+def test_sales_list_caps_oversized_page_size_at_one_hundred(admin_client):
     """Falla si un cliente puede pedir más de cien ventas en una página."""
     _sales(101, prefix='capped')
 
-    response = authenticated_client.get(reverse('sale-list'), {'page_size': 1000})
+    response = admin_client.get(reverse('sale-list'), {'page_size': 1000})
 
     assert response.status_code == 200
     assert len(response.json()['results']) == 100
@@ -110,24 +109,24 @@ def test_sales_list_caps_oversized_page_size_at_one_hundred(authenticated_client
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('page', ['0', 'not-a-page', '2'])
-def test_sales_list_invalid_page_returns_drf_not_found(authenticated_client, page):
+def test_sales_list_invalid_page_returns_drf_not_found(admin_client, page):
     """Falla si una página inválida deja de conservar el 404 estándar de DRF."""
     _sales(1, prefix='invalid-page')
 
-    response = authenticated_client.get(reverse('sale-list'), {'page': page})
+    response = admin_client.get(reverse('sale-list'), {'page': page})
 
     assert response.status_code == 404
     assert response.json() == {'detail': 'Invalid page.'}
 
 
 @pytest.mark.django_db
-def test_sales_list_traverses_every_sale_once(authenticated_client):
+def test_sales_list_traverses_every_sale_once(admin_client):
     """Falla si páginas consecutivas ocultan, repiten o desordenan ventas."""
     sales = _sales(205, prefix='traverse')
 
-    first_page = authenticated_client.get(reverse('sale-list'), {'page_size': 100, 'page': 1})
-    second_page = authenticated_client.get(reverse('sale-list'), {'page_size': 100, 'page': 2})
-    third_page = authenticated_client.get(reverse('sale-list'), {'page_size': 100, 'page': 3})
+    first_page = admin_client.get(reverse('sale-list'), {'page_size': 100, 'page': 1})
+    second_page = admin_client.get(reverse('sale-list'), {'page_size': 100, 'page': 2})
+    third_page = admin_client.get(reverse('sale-list'), {'page_size': 100, 'page': 3})
 
     assert (
         first_page.status_code,
@@ -149,9 +148,9 @@ def test_sales_list_traverses_every_sale_once(authenticated_client):
 
 
 @pytest.mark.django_db
-def test_sales_list_empty_page_returns_empty_envelope(authenticated_client):
+def test_sales_list_empty_page_returns_empty_envelope(admin_client):
     """Falla si un catálogo de ventas vacío pierde su envelope paginado explícito."""
-    response = authenticated_client.get(reverse('sale-list'))
+    response = admin_client.get(reverse('sale-list'))
 
     assert response.status_code == 200
     assert response.json() == {'count': 0, 'next': None, 'previous': None, 'results': []}
@@ -161,16 +160,16 @@ def test_sales_list_empty_page_returns_empty_envelope(authenticated_client):
 @pytest.mark.parametrize(
     'sales_dataset', [(1, (1, 1, 1)), (10_001, (1, 50, 100))], indirect=True,
 )
-def test_sales_list_select_budget_is_constant_across_page_sizes(authenticated_client, sales_dataset):
+def test_sales_list_select_budget_is_constant_across_page_sizes(admin_client, sales_dataset):
     """Falla si el listado suma SELECT por tamaño de página o por cantidad de ventas."""
     sales, expected_lengths = sales_dataset
     newest_sale = sales[-1]
     with CaptureQueriesContext(connection) as one_query_context:
-        one_response = authenticated_client.get(reverse('sale-list'), {'page_size': 1})
+        one_response = admin_client.get(reverse('sale-list'), {'page_size': 1})
     with CaptureQueriesContext(connection) as fifty_query_context:
-        fifty_response = authenticated_client.get(reverse('sale-list'), {'page_size': 50})
+        fifty_response = admin_client.get(reverse('sale-list'), {'page_size': 50})
     with CaptureQueriesContext(connection) as hundred_query_context:
-        hundred_response = authenticated_client.get(reverse('sale-list'), {'page_size': 100})
+        hundred_response = admin_client.get(reverse('sale-list'), {'page_size': 100})
 
     select_counts = [
         _select_count(one_query_context), _select_count(fifty_query_context), _select_count(hundred_query_context),
@@ -189,11 +188,11 @@ def test_sales_list_select_budget_is_constant_across_page_sizes(authenticated_cl
 
 
 @pytest.mark.django_db
-def test_sales_list_page_payload_stays_within_budget(authenticated_client):
+def test_sales_list_page_payload_stays_within_budget(admin_client):
     """Falla si una página completa de ventas supera el presupuesto de JSON sin comprimir."""
     _sales(100, prefix='payload')
 
-    response = authenticated_client.get(reverse('sale-list'), {'page_size': 100})
+    response = admin_client.get(reverse('sale-list'), {'page_size': 100})
 
     assert response.status_code == 200
     assert len(response.json()['results']) == 100

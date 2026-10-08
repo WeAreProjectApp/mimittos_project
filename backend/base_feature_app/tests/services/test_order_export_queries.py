@@ -170,3 +170,49 @@ def test_export_orders_csv_orders_item_rows_by_descending_order_date():
         second_included.order_number,
         first_included.order_number,
     ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('dangerous_text', [
+    '=1+1', '+1+1', '-1+1', '@SUM(1,1)', '\t=1+1', '\r=1+1', '\n=1+1',
+    '  =1+1', '＝1+1', '＋1+1', '－1+1', '＠SUM(1,1)', '=1+1;"quoted",value',
+])
+def test_export_orders_csv_neutralizes_text_formulas(dangerous_text):
+    """Export user-controlled fields as text without rewriting stored values."""
+    order = _create_orders_with_items(1)[0]
+    Order.objects.filter(pk=order.pk).update(
+        customer_name=dangerous_text, city=dangerous_text, department=dangerous_text,
+    )
+
+    exported = AnalyticsService.export_orders_csv(date(2000, 1, 1), date(2100, 1, 1))
+
+    row = _csv_rows(exported)[1]
+    assert (row[2], row[4], row[5]) == ("'" + dangerous_text,) * 3
+    order.refresh_from_db()
+    assert (order.customer_name, order.city, order.department) == (dangerous_text,) * 3
+
+
+@pytest.mark.django_db
+def test_export_orders_csv_preserves_numeric_cells():
+    """Formula defenses do not convert amounts or quantities to escaped text."""
+    order = _create_orders_with_items(1)[0]
+    Order.objects.filter(pk=order.pk).update(customer_name='=1+1', balance_amount=0)
+
+    exported = AnalyticsService.export_orders_csv(date(2000, 1, 1), date(2100, 1, 1))
+
+    row = _csv_rows(exported)[1]
+    assert (row[7], row[8], row[9], row[15], row[16]) == ('10000', '5000', '0', '1', '10000')
+
+
+@pytest.mark.django_db
+def test_export_orders_csv_preserves_ordinary_text():
+    """Preserve accents, embedded separators, quotes, columns and the UTF-8 BOM."""
+    order = _create_orders_with_items(1)[0]
+    Order.objects.filter(pk=order.pk).update(customer_name='Ana, "María"; García')
+
+    exported = AnalyticsService.export_orders_csv(date(2000, 1, 1), date(2100, 1, 1))
+
+    row = _csv_rows(exported)[1]
+    assert row[2] == 'Ana, "María"; García'
+    assert len(row) == 17
+    assert exported.startswith(b'\xef\xbb\xbf')

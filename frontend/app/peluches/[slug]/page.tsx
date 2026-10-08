@@ -75,7 +75,7 @@ export default function PeluchDetailPage() {
   const addToCart = useCartStore((s) => s.addToCart)
   const updatePersonalization = useCartStore((s) => s.updatePersonalization)
   const cartItems = useCartStore((s) => s.items)
-  const { isAuthenticated, user } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
 
   usePageView(slug)
 
@@ -705,7 +705,7 @@ export default function PeluchDetailPage() {
 
         {/* Write a review */}
         {(() => {
-          const alreadyReviewed = reviews.some((r) => r.user_email === user?.email)
+          const alreadyReviewed = isAuthenticated && reviews.some((r) => r.is_mine)
           if (alreadyReviewed || reviewDone) {
             return reviewDone ? (
               <div style={{ background: '#F1F8E9', border: '1.5px solid #C5E1A5', borderRadius: 'var(--radius-lg)', padding: '20px 24px', maxWidth: 520, display: 'flex', gap: 14, alignItems: 'flex-start' }}>

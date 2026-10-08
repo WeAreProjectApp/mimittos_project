@@ -256,7 +256,7 @@ export type OrderCreateResponse = OrderAccessGrant & {
 
 export type Review = {
   id: number
-  user_email: string
+  is_mine: boolean
   user_name: string
   rating: number
   comment: string

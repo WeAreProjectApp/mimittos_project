@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import PeluchDetailPage from '../page'
 import { peluchService } from '../../../../lib/services/peluchService'
 import { mediaService } from '../../../../lib/services/mediaService'
+import { useAuthStore } from '../../../../lib/stores/authStore'
 import { useCartStore } from '../../../../lib/stores/cartStore'
 
 jest.mock('../../../../lib/services/peluchService', () => ({
@@ -14,8 +15,16 @@ jest.mock('../../../../lib/services/peluchService', () => ({
   },
 }))
 
+jest.mock('../../../../lib/services/http', () => ({
+  api: { post: jest.fn().mockResolvedValue({ data: {} }) },
+}))
+
 jest.mock('../../../../lib/services/mediaService', () => ({
   mediaService: { uploadImage: jest.fn(), uploadAudio: jest.fn() },
+}))
+
+jest.mock('../../../../lib/stores/authStore', () => ({
+  useAuthStore: jest.fn(),
 }))
 
 jest.mock('../../../../lib/stores/cartStore', () => ({
@@ -30,6 +39,7 @@ jest.mock('next/navigation', () => ({
 
 const mockPeluchService = peluchService as jest.Mocked<typeof peluchService>
 const mockMediaService = mediaService as jest.Mocked<typeof mediaService>
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock
 const mockUseCartStore = useCartStore as unknown as jest.Mock
 
 const mockPeluchDetail = {
@@ -63,10 +73,38 @@ const mockPeluchDetail = {
 describe('PeluchDetailPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
     mockUseCartStore.mockImplementation((selector: (s: any) => unknown) =>
       selector({ addToCart: jest.fn(), items: [] })
     )
     mockPeluchService.getReviews.mockResolvedValue([])
+  })
+
+  it('hides the review form when the response identifies an owned review', async () => {
+    mockUseAuthStore.mockReturnValue({ isAuthenticated: true, user: { email: 'buyer@example.com' } })
+    mockPeluchService.getPeluchBySlug.mockResolvedValue(mockPeluchDetail)
+    mockPeluchService.getReviews.mockResolvedValue([{
+      id: 1, is_mine: true, user_name: 'Ana', rating: 5,
+      comment: 'Excelente peluche', created_at: '2026-10-08T12:00:00Z',
+    }])
+    render(<PeluchDetailPage />)
+
+    expect(await screen.findByText('Excelente peluche')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Publicar reseña' })).not.toBeInTheDocument()
+  })
+
+  it('shows the review form when displayed reviews belong to someone else', async () => {
+    mockUseAuthStore.mockReturnValue({ isAuthenticated: true, user: { email: 'buyer@example.com' } })
+    mockPeluchService.getPeluchBySlug.mockResolvedValue(mockPeluchDetail)
+    mockPeluchService.getReviews.mockResolvedValue([{
+      id: 1, is_mine: false, user_name: 'Ana', rating: 5,
+      comment: 'Excelente peluche', created_at: '2026-10-08T12:00:00Z',
+    }])
+    render(<PeluchDetailPage />)
+
+    expect(await screen.findByText('Excelente peluche')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Cuéntanos cómo fue tu experiencia con este peluche... (mínimo 10 caracteres)')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Publicar reseña' })).toBeDisabled()
   })
 
   it('renders loading state initially', () => {

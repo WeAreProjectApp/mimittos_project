@@ -1,4 +1,7 @@
 
+import csv
+from io import StringIO
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -174,3 +177,20 @@ def test_export_orders_csv_has_header_row(admin_client, sample_order):
     response = admin_client.get('/api/analytics/export/orders/')
     content = response.content.decode('utf-8-sig')
     assert 'Número pedido' in content
+
+
+@pytest.mark.django_db
+def test_export_orders_response_neutralizes_customer_formula(admin_client, sample_order):
+    """The downloaded administrative CSV contains text rather than a formula."""
+    from base_feature_app.tests.factories import OrderItemFactory
+
+    Order.objects.filter(pk=sample_order.pk).update(customer_name='=1+1')
+    OrderItemFactory(order=sample_order)
+
+    response = admin_client.get('/api/analytics/export/orders/?date_from=2000-01-01&date_to=2100-01-01')
+
+    assert response.status_code == 200
+    rows = list(csv.reader(StringIO(response.content.decode('utf-8-sig'))))
+    assert rows[1][2] == "'=1+1"
+    sample_order.refresh_from_db()
+    assert sample_order.customer_name == '=1+1'

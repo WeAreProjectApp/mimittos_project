@@ -17,6 +17,9 @@ def sales(request):
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
 
+    if not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
     queryset = Sale.objects.all().order_by('-id')
     paginator = BoundedListPagination()
     page = paginator.paginate_queryset(queryset, request)
@@ -29,6 +32,9 @@ def sales(request):
 def sale_detail(request, sale_id: int):
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         sale = Sale.objects.prefetch_related(
