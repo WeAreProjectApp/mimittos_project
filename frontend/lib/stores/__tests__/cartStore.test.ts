@@ -22,7 +22,7 @@ describe('payment rounding', () => {
     expect(calcShipping([{ ...item1, quantity: 1, free_shipping: false, shipping_cost: shipping }])).toBe(expected)
   })
 
-  it('rounds the aggregate deposit after adding all lines', () => {
+  it('rounds the aggregate deposit after adding two lines', () => {
     const line = { ...item1, unit_price: 50100, personalization_cost: 0, quantity: 1, deposit_percentage: 50 }
     expect(calcDeposit([line, line])).toBe(50100)
   })
