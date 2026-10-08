@@ -4,8 +4,9 @@ import { CHECKOUT_FORM_DISPLAY, CHECKOUT_FORM_VALIDATION, CHECKOUT_FORM_FILL, CH
 
 test.describe('Checkout Flow', () => {
   // quality: disable test_too_long (product → checkout → server amount verifies rounding parity)
+  // Catches the 100 COP difference caused by Math.round at a nearest-even deposit tie.
   test('shows the same halfway deposit as the order charge',
-    { tag: [...CHECKOUT_WOMPI_REDIRECT] }, async ({ page }) => {
+    { tag: [...CHECKOUT_WOMPI_REDIRECT, '@outcome:success'] }, async ({ page }) => {
       const product = {
         id: 901, title: 'Rounding bear', slug: 'rounding-bear',
         category_name: 'Osos', category_slug: 'osos', category: { name: 'Osos', slug: 'osos' },
@@ -30,9 +31,9 @@ test.describe('Checkout Flow', () => {
       await page.getByRole('button', { name: 'Agregar · $50.100', exact: true }).click()
       await page.goto('/checkout')
       await expect(page.getByText('Pagar anticipo', { exact: true }).locator('..')).toContainText('$25.000')
-      await page.getByText('Nombre completo', { exact: true }).locator('..').locator('input').fill('Ana López')
-      await page.getByText('Correo electrónico', { exact: true }).locator('..').locator('input').fill('ana@example.com')
-      await page.getByText('Celular', { exact: true }).locator('..').locator('input').fill('3001234567')
+      await page.getByLabel('Nombre completo').fill('Ana López')
+      await page.getByLabel('Correo electrónico').fill('ana@example.com')
+      await page.getByLabel('Celular').fill('3001234567')
       await page.getByPlaceholder('Calle 50 # 40-20, Apto 301').fill('Calle 50 # 40-20')
       await page.getByRole('checkbox').check()
       await page.getByRole('button', { name: 'Ir a pagar · $25.000', exact: true }).click()
