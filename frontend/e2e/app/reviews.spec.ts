@@ -42,6 +42,18 @@ async function setupAuth(page: Page) {
 }
 
 async function setupProduct(page: Page, isMine: boolean) {
+  await page.route('**/api/categories/', (route: Route) => route.fulfill({
+    json: [{
+      id: 1, name: 'Clásicos', slug: 'clasicos', description: '',
+      display_order: 1, is_active: true, is_featured: false, image_url: null,
+    }],
+  }));
+  await page.route('**/api/sizes/', (route: Route) => route.fulfill({
+    json: [mockPeluch.size_prices[0].size],
+  }));
+  await page.route(/\/api\/peluches\/(?:\?.*)?$/, (route: Route) => route.fulfill({
+    json: [mockPeluch],
+  }));
   await page.route(`**/api/peluches/${TEST_SLUG}/`, (route: Route) => route.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify(mockPeluch),
   }));
@@ -57,7 +69,9 @@ test('an owned review hides the submission form',
     await setupAuth(page);
     await setupProduct(page, true);
 
-    await page.goto(`/peluches/${TEST_SLUG}`);
+    await page.goto('/catalog');
+    await page.getByRole('link', { name: /Peluche de Prueba/ }).click();
+    await expect(page).toHaveURL(`/peluches/${TEST_SLUG}`);
 
     await expect(page.getByText('Un recuerdo muy especial')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Publicar reseña' })).toHaveCount(0);
@@ -70,7 +84,9 @@ test('a guest can read public reviews',
   async ({ page }) => {
     await setupProduct(page, false);
 
-    await page.goto(`/peluches/${TEST_SLUG}`);
+    await page.goto('/catalog');
+    await page.getByRole('link', { name: /Peluche de Prueba/ }).click();
+    await expect(page).toHaveURL(`/peluches/${TEST_SLUG}`);
 
     await expect(page.getByText('Un recuerdo muy especial')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Iniciar sesión', exact: true })).toBeVisible();
@@ -83,7 +99,9 @@ test('another buyer can submit a review using the ownership flag',
   async ({ page }) => {
     await setupAuth(page);
     await setupProduct(page, false);
-    await page.goto(`/peluches/${TEST_SLUG}`);
+    await page.goto('/catalog');
+    await page.getByRole('link', { name: /Peluche de Prueba/ }).click();
+    await expect(page).toHaveURL(`/peluches/${TEST_SLUG}`);
     await expect(page.getByText('Un recuerdo muy especial')).toBeVisible();
     await page.route(`**/api/peluches/${TEST_SLUG}/reviews/`, (route: Route) => route.fulfill({
       status: 201, contentType: 'application/json',
