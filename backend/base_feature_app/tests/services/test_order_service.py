@@ -263,6 +263,17 @@ def test_calculate_deposit_uses_deposit_percentage_setting():
 # create_order
 # ---------------------------------------------------------------------------
 
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('price', 'expected'), [(50100, 25000), (50300, 25200)])
+def test_create_order_rounds_halfway_deposit_to_even_hundred(peluch, size, color, price, expected):
+    PeluchSizePrice.objects.create(peluch=peluch, size=size, price=price, deposit_percentage=50)
+
+    order = OrderService.create_order(_order_data(peluch, (size, color, 1)))
+
+    assert order.amount_paid_now == expected
+    assert WompiTransaction.objects.get(order=order).amount_in_cents == expected * 100
+
 @pytest.mark.django_db
 @patch('base_feature_app.services.order_service.OrderService.mark_media_as_used')
 def test_create_order_creates_order_in_database(mock_media, base_order_data):

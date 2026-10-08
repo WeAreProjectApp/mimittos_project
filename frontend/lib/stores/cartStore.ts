@@ -4,13 +4,10 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import type { CartItem, PaymentMode } from '@/lib/types'
+import { roundToHundred } from '@/lib/utils/pricing'
 
 function cartKey(item: CartItem) {
   return `${item.peluch_id}-${item.size_id}-${item.color_id}`
-}
-
-function roundTo100(value: number) {
-  return Math.round(value / 100) * 100
 }
 
 export function lineTotal(item: CartItem) {
@@ -22,7 +19,7 @@ export function calcDeposit(items: CartItem[]) {
     (acc, item) => acc + lineTotal(item) * (item.deposit_percentage ?? 50) / 100,
     0
   )
-  return roundTo100(raw)
+  return roundToHundred(raw)
 }
 
 export function calcFullPaymentDiscount(items: CartItem[]) {
@@ -30,7 +27,7 @@ export function calcFullPaymentDiscount(items: CartItem[]) {
     (acc, item) => acc + lineTotal(item) * (item.full_payment_discount_pct ?? 0) / 100,
     0
   )
-  return roundTo100(raw)
+  return roundToHundred(raw)
 }
 
 export function calcShipping(items: CartItem[]) {
@@ -38,7 +35,7 @@ export function calcShipping(items: CartItem[]) {
     (acc, item) => acc + (item.free_shipping ? 0 : (item.shipping_cost ?? 0) * item.quantity),
     0
   )
-  return roundTo100(raw)
+  return roundToHundred(raw)
 }
 
 export function calcAmountToPayNow(items: CartItem[], mode: PaymentMode) {

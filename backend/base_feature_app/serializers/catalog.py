@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+from django.db import transaction
 from django.utils.text import slugify
 
 from rest_framework import serializers
@@ -269,6 +270,13 @@ class PeluchCreateUpdateSerializer(serializers.ModelSerializer):
             'available_color_ids', 'size_prices_data',
         ]
 
+    def validate_size_prices_data(self, value):
+        size_ids = {row['size_id'] for row in value}
+        existing_ids = set(GlobalSize.objects.filter(pk__in=size_ids).values_list('pk', flat=True))
+        if size_ids != existing_ids:
+            raise serializers.ValidationError('Una talla ya no existe. Actualiza el formulario antes de guardar.')
+        return value
+
     def _sync_colors(self, peluch, color_ids):
         if color_ids is not None:
             colors = GlobalColor.objects.filter(id__in=color_ids)
@@ -291,6 +299,7 @@ class PeluchCreateUpdateSerializer(serializers.ModelSerializer):
                 },
             )
 
+    @transaction.atomic
     def create(self, validated_data):
         color_ids = validated_data.pop('available_color_ids', None)
         size_prices_data = validated_data.pop('size_prices_data', None)
@@ -301,6 +310,7 @@ class PeluchCreateUpdateSerializer(serializers.ModelSerializer):
         self._sync_size_prices(peluch, size_prices_data)
         return peluch
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         color_ids = validated_data.pop('available_color_ids', None)
         size_prices_data = validated_data.pop('size_prices_data', None)

@@ -41,6 +41,31 @@ def peluch(db, category, color):
 # Sizes CRUD
 # ---------------------------------------------------------------------------
 
+
+@pytest.mark.django_db
+def test_peluch_post_rejects_missing_size_without_creating_gallery(admin_client, category):
+    galleries = set(Library.objects.values_list('pk', flat=True))
+
+    response = admin_client.post('/api/peluches/', {
+        'title': 'Invalid size', 'slug': 'invalid-size', 'category': category.pk,
+        'lead_description': 'Test', 'size_prices_data': [{'size_id': 999999, 'price': 50000}],
+    }, format='json')
+
+    assert response.status_code == 400
+    assert not Peluch.objects.filter(slug='invalid-size').exists()
+    assert set(Library.objects.values_list('pk', flat=True)) == galleries
+
+
+@pytest.mark.django_db
+def test_peluch_patch_rejects_missing_size_without_updating_product(admin_client, peluch):
+    response = admin_client.patch(f'/api/peluches/{peluch.slug}/', {
+        'lead_description': 'Changed', 'size_prices_data': [{'size_id': 999999, 'price': 50000}],
+    }, format='json')
+
+    assert response.status_code == 400
+    peluch.refresh_from_db()
+    assert peluch.lead_description == 'Feroz'
+
 @pytest.mark.django_db
 def test_sizes_post_creates_size_as_admin(admin_client):
     response = admin_client.post('/api/sizes/', {'label': 'Gigante', 'cm': '100cm'})
