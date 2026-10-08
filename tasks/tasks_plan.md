@@ -5,6 +5,31 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal por frentes — 2026-10-08
+
+- Seguridad: privacidad de reseñas, autorización staff de ventas y protección
+  de textos exportados contra fórmulas CSV.
+- Mantenibilidad: rechazo de imágenes sin persistencia parcial, escrituras
+  anidadas atómicas y anticipo frontend conforme al redondeo del servidor.
+- Observabilidad: timeout SMTP configurable y conservación del pago confirmado
+  ante un fallo del correo.
+- Rendimiento: consultas constantes al serializar respuestas PATCH de pedidos
+  con uno o cincuenta artículos.
+- Responsividad: menú administrativo móvil hasta 1024 px, condicionado a la
+  reproducción a 835 px y la matriz/rotación en navegador.
+- QA: controles reales del carrito, checkout pendiente/rechazado y job MySQL
+  para doce casos de concurrencia sin omisiones.
+- Cierre: QA combinada, PR por rama, merge-queue de esta ronda y comprobación
+  all-in-base. El estado exacto se consulta en el reporte del toolkit de
+  `improvement-20261008-orchestrated-r2`.
+
+Descartados por retorno insuficiente: extraer fórmulas equivalentes o políticas
+JPEG coincidentes sin fallo demostrado, ampliar logs sin una necesidad de
+diagnóstico y cambiar concurrencia de imágenes sin medición del cuello de botella.
+Pendientes separados: redirección bancaria, entrega durable del correo,
+rotación JWT, accesibilidad adicional del drawer y PATCH de precios anidados
+con campos omitidos. No se añaden a la implementación de esta ronda.
+
 ## Ronda orquestada de integridad — 2026-10-08
 
 - Códigos de cuenta: presupuesto persistente por cuenta/propósito, reenvío que
