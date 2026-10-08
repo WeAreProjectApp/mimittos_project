@@ -1,19 +1,19 @@
 """Verify authentication and account recovery API behavior."""
 
 from datetime import timedelta
-from threading import Barrier, Thread
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import close_old_connections, connection
+from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 from rest_framework import status
-from rest_framework.test import APIClient
 
 from base_feature_app.models import PasswordCode
+from base_feature_app.models.password_code import PasswordCodeAttemptBudget
+from base_feature_app.tests.views.test_account_code_limits import _parallel_posts
 from base_feature_app.views import auth as auth_views
 
 
@@ -403,6 +403,39 @@ def test_verify_passcode_rejects_registration_code(api_client):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(('send_route', 'verify_route', 'purpose'), [
+    ('send_passcode', 'verify_passcode_reset', PasswordCode.Purpose.PASSWORD_RESET),
+    ('resend_verification', 'verify_registration', PasswordCode.Purpose.REGISTRATION),
+])
+def test_resent_code_rejects_previous_value(api_client, monkeypatch, mailoutbox, send_route,
+                                          verify_route, purpose):
+    """A code replaced by an email resend must no longer change account state."""
+    user = get_user_model().objects.create_user(
+        email='replaced@example.com', password='Initial123!', email_verified=False,
+    )
+    previous = PasswordCode.objects.create(user=user, purpose=purpose, code='654321')
+    original_password = user.password
+    monkeypatch.setattr('random.randint', lambda *_: 1)
+    sent = api_client.post(reverse(send_route), {'email': user.email}, format='json')
+
+    response = api_client.post(reverse(verify_route), {
+        'email': user.email, 'code': previous.code, 'new_password': 'Replacement123!',
+    }, format='json')
+
+    user.refresh_from_db()
+    previous.refresh_from_db()
+    current = PasswordCode.objects.get(user=user, purpose=purpose, used=False)
+    assert sent.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert user.password == original_password
+    assert user.email_verified is False
+    assert previous.used is True
+    assert current.code == '111111'
+    assert current.is_valid() is True
+    assert len(mailoutbox) == 1
+
+
+@pytest.mark.django_db
 def test_update_password_requires_fields(api_client):
     """Verify password updates require current and replacement passwords."""
     User = get_user_model()
@@ -500,7 +533,7 @@ def test_validate_token_success(api_client):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='requires MySQL row locks')
-def test_verify_registration_consumes_code_once_under_mysql_locking():
+def test_verify_registration_consumes_code_once_under_mysql_locking(record_testsuite_property):
     """Falla si dos solicitudes MySQL verifican y canjean el mismo código."""
     User = get_user_model()
     user = User.objects.create_user(
@@ -509,31 +542,17 @@ def test_verify_registration_consumes_code_once_under_mysql_locking():
     PasswordCode.objects.create(
         user=user, code='888888', purpose=PasswordCode.Purpose.REGISTRATION,
     )
-    barrier = Barrier(2)
-    statuses = []
+    results, lock_wait = _parallel_posts('verify_registration', {
+        'email': user.email, 'code': '888888',
+    })
 
-    def submit_verification():
-        close_old_connections()
-        client = APIClient()
-        barrier.wait()
-        response = client.post(
-            reverse('verify_registration'),
-            {'email': user.email, 'code': '888888'},
-            format='json',
-        )
-        statuses.append(response.status_code)
-        close_old_connections()
-
-    first = Thread(target=submit_verification)
-    second = Thread(target=submit_verification)
-    first.start()
-    second.start()
-    first.join(timeout=10)
-    second.join(timeout=10)
-
-    assert not first.is_alive()
-    assert not second.is_alive()
-    assert sorted(statuses) == [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+    assert len({connection_id for connection_id, _ in results}) == 2
+    assert lock_wait == (results[1][0], results[0][0])
+    assert sorted(result_status for _, result_status in results) == [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
     user.refresh_from_db()
     assert user.email_verified is True
     assert PasswordCode.objects.get(user=user, code='888888').used is True
+    assert PasswordCodeAttemptBudget.objects.filter(
+        user=user, purpose=PasswordCode.Purpose.REGISTRATION,
+    ).count() == 1
+    record_testsuite_property('consumption-lock-wait-registration', str(lock_wait))
