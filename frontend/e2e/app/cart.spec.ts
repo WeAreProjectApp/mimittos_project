@@ -1,237 +1,161 @@
+import type { Page } from '@playwright/test';
+import type { PeluchDetail } from '../../lib/types';
 import { test, expect } from '../test-with-coverage';
-import { waitForPageLoad } from '../fixtures';
 import { CART_ADD, CART_EMPTY, CART_UPDATE_QTY, CART_REMOVE, CART_SUBTOTAL, CART_PERSIST, CART_MULTIPLE_PRODUCTS } from '../helpers/flow-tags';
+
+const CATEGORY = { id: 1, name: 'Osos', slug: 'osos', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null };
+const SIZE = { id: 21, label: 'Mediano', slug: 'mediano', cm: '30 cm', sort_order: 1 };
+const COLOR = { id: 31, name: 'Coral', slug: 'coral', hex_code: '#d4848a', sort_order: 1, preview_url: null, image_count: 0, images: [] };
+
+function peluch(id: number, title: string, slug: string, price: number): PeluchDetail {
+  return {
+    id, title, slug, category_name: CATEGORY.name, category_slug: CATEGORY.slug,
+    lead_description: '', badge: 'none', is_active: true, is_featured: false,
+    discount_pct: 0, display_order: id, min_price: price, discounted_min_price: price,
+    available_colors: [COLOR], gallery_urls: [], average_rating: 0, review_count: 0,
+    has_huella: false, has_corazon: false, has_audio: false, category: CATEGORY,
+    description: [], specifications: {}, care_instructions: [], view_count: 0,
+    huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0,
+    created_at: '', updated_at: '',
+    size_prices: [{ id, size: SIZE, price, is_available: true, deposit_percentage: 50,
+      full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
+  };
+}
+
+const BEAR = peluch(11, 'Oso Coral de prueba', 'oso-coral-prueba', 80000);
+const RABBIT = peluch(12, 'Conejo Coral de prueba', 'conejo-coral-prueba', 60000);
+
+async function mockCatalog(page: Page) {
+  await page.route('**/api/categories/', (route) => route.fulfill({ json: [CATEGORY] }));
+  await page.route('**/api/sizes/', (route) => route.fulfill({ json: [SIZE] }));
+  await page.route(/\/api\/peluches\/(?:\?.*)?$/, (route) => route.fulfill({ json: [BEAR, RABBIT] }));
+  for (const product of [BEAR, RABBIT]) {
+    await page.route('**/api/peluches/' + product.slug + '/', (route) => route.fulfill({ json: product }));
+    await page.route('**/api/peluches/' + product.slug + '/reviews/', (route) => route.fulfill({ json: [] }));
+  }
+}
+
+async function addProduct(page: Page, product: PeluchDetail) {
+  await page.goto('/catalog');
+  await page.getByRole('link', { name: new RegExp(product.title) }).click();
+  await expect(page.getByRole('heading', { name: product.title, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Agregar/ }).click();
+  await expect(page.getByText('¡Agregado al carrito!')).toBeVisible();
+}
+
+function cartLine(page: Page, title: string) {
+  // quality: allow-fragile-selector (the named product heading scopes its cart row; the page has no labelled row container).
+  return page.getByRole('main').getByRole('heading', { name: title, exact: true }).locator('..').locator('..');
+}
+
+function subtotal(page: Page) {
+  return page.getByText('Subtotal productos', { exact: true }).locator('..');
+}
 
 test.describe('Shopping Cart', () => {
   test.beforeEach(async ({ page }) => {
+    await mockCatalog(page);
     await page.goto('/cart');
     await page.evaluate(() => localStorage.clear());
     await page.reload();
-    await waitForPageLoad(page);
+    await expect(page.getByText('Tu carrito está vacío', { exact: true })).toBeVisible();
   });
 
-  test('should add peluch to cart', { tag: [...CART_ADD, '@outcome:success'] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
-    await expect(page).toHaveURL(/.*catalog/);
-
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
-
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
-
-      // Select size if available
-      const firstSize = page.getByRole('button', { name: /Pequeño|Mediano/i }).first();
-      if (await firstSize.isVisible()) {
-        await firstSize.click();
-      }
-
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      await expect(page.getByText(/Tu carrito está vacío/)).toBeHidden();
-    }
-  });
-
-  test('should show empty cart message', { tag: [...CART_EMPTY, '@outcome:display'] }, async ({ page }) => {
-    // quality: allow-no-interaction (empty-cart is a display-class state; a fresh visit asserts the real empty message)
+  test('adds the selected product to the cart', { tag: [...CART_ADD, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
     await page.goto('/cart');
-    await waitForPageLoad(page);
-    await expect(page.getByText(/Tu carrito está vacío/)).toBeVisible();
+
+    await expect(cartLine(page, BEAR.title)).toContainText('Mediano');
+    await expect(cartLine(page, BEAR.title)).toContainText('Coral');
+    await expect(page.getByRole('button', { name: 'Eliminar', exact: true })).toHaveCount(1);
+    await expect(page.getByText('Tu carrito está vacío', { exact: true })).toBeHidden();
   });
 
-  test('should update peluch quantity in cart', { tag: [...CART_UPDATE_QTY] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
-
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
-
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
-
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      // quality: allow-fragile-selector (number input is the only type="number" field on this page)
-      const qtyInput = page.locator('input[type="number"]').first();
-      if (await qtyInput.isVisible()) {
-        await qtyInput.fill('3');
-        await expect(qtyInput).toHaveValue('3');
-      }
-    }
+  test('shows the empty cart message', { tag: [...CART_EMPTY, '@outcome:display'] }, async ({ page }) => {
+    // quality: allow-no-interaction (fresh empty-cart display is asserted after the shared storage reset).
+    await expect(page.getByText('Tu carrito está vacío', { exact: true })).toHaveText('Tu carrito está vacío');
+    await expect(page.getByRole('link', { name: 'Ver catálogo', exact: true })).toBeVisible();
   });
 
-  test('should remove peluch from cart', { tag: [...CART_REMOVE, '@outcome:success'] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('updates quantity through the increment control', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await page.goto('/cart');
+    const line = cartLine(page, BEAR.title);
+    const quantity = line.getByRole('button', { name: '+', exact: true }).locator('..');
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
+    await line.getByRole('button', { name: '+', exact: true }).click();
+    await line.getByRole('button', { name: '+', exact: true }).click();
 
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
-
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      const removeBtn = page.getByRole('button', { name: /Eliminar/i });
-      if (await removeBtn.isVisible()) {
-        await removeBtn.click();
-        await expect(page.getByText(/Tu carrito está vacío/)).toBeVisible();
-      }
-    }
+    await expect(quantity.getByText('3', { exact: true })).toHaveText('3');
+    await expect(subtotal(page)).toHaveText('Subtotal productos$240.000');
   });
 
-  test('should show subtotal in cart summary', { tag: [...CART_SUBTOTAL, '@outcome:display'] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('removes the last product explicitly', { tag: [...CART_REMOVE, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await page.goto('/cart');
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
+    await cartLine(page, BEAR.title).getByRole('button', { name: 'Eliminar', exact: true }).click();
 
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
-
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      await expect(page.locator('text=Subtotal')).toBeVisible();
-    }
+    await expect(page.getByText('Tu carrito está vacío', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: BEAR.title, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Continuar al checkout', exact: true })).toHaveCount(0);
   });
 
-  test('should persist cart across page reloads', { tag: [...CART_PERSIST, '@outcome:display'] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('shows the exact product subtotal', { tag: [...CART_SUBTOTAL, '@outcome:display'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await page.goto('/cart');
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const firstPeluch = peluchCards.first();
-    await expect(firstPeluch).toBeVisible();
+    await expect(subtotal(page)).toHaveText('Subtotal productos$80.000');
+  });
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    await firstPeluch.click();
-    await waitForPageLoad(page);
-
-    const addBtn = page.getByRole('button', { name: /Agregar/i });
-    await expect(addBtn).toBeVisible();
-    await addBtn.click();
-    await page.waitForLoadState('domcontentloaded');
+  test('persists the updated quantity across a reload', { tag: [...CART_PERSIST, '@outcome:display'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await page.goto('/cart');
+    await cartLine(page, BEAR.title).getByRole('button', { name: '+', exact: true }).click();
+    await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
 
     await page.reload();
-    await waitForPageLoad(page);
 
+    const quantity = cartLine(page, BEAR.title).getByRole('button', { name: '+', exact: true }).locator('..');
+    await expect(quantity.getByText('2', { exact: true })).toHaveText('2');
+    await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
+    await expect(page.getByRole('button', { name: 'Eliminar', exact: true })).toHaveCount(1);
+  });
+
+  test('keeps quantity at one when decremented', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
     await page.goto('/cart');
-    await waitForPageLoad(page);
+    const line = cartLine(page, BEAR.title);
 
-    await expect(page.getByText('Subtotal productos')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Eliminar' })).toBeVisible();
+    await line.getByRole('button', { name: '−', exact: true }).click();
+
+    const quantity = line.getByRole('button', { name: '−', exact: true }).locator('..');
+    await expect(quantity.getByText('1', { exact: true })).toHaveText('1');
+    await expect(line.getByRole('button', { name: 'Eliminar', exact: true })).toBeVisible();
+    await expect(subtotal(page)).toHaveText('Subtotal productos$80.000');
   });
 
-  test('should show empty cart when item quantity is decremented to zero', { tag: [...CART_UPDATE_QTY] }, async ({ page }) => {
-    // Add an item first
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('decrements quantity through the decrement control', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await page.goto('/cart');
+    const line = cartLine(page, BEAR.title);
+    await line.getByRole('button', { name: '+', exact: true }).click();
+    await expect(subtotal(page)).toHaveText('Subtotal productos$160.000');
 
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    if (await peluchCards.count() > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
+    await line.getByRole('button', { name: '−', exact: true }).click();
 
-      const addBtn = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      // Decrement quantity until item is removed
-      const decrementBtn = page.locator('[data-testid="cart-item"]').first().getByRole('button').first();
-      if (await decrementBtn.isVisible()) {
-        await decrementBtn.click();
-        await page.waitForLoadState('domcontentloaded');
-
-        // After removing last item, cart should show empty state
-        const emptyMsg = page.getByText(/Tu carrito está vacío/i);
-        const cartItems = page.locator('[data-testid="cart-item"]');
-        const remaining = await cartItems.count();
-        if (remaining === 0) {
-          await expect(emptyMsg).toBeVisible();
-        }
-      }
-    }
+    const quantity = line.getByRole('button', { name: '−', exact: true }).locator('..');
+    await expect(quantity.getByText('1', { exact: true })).toHaveText('1');
+    await expect(subtotal(page)).toHaveText('Subtotal productos$80.000');
   });
 
-  test('should add multiple different peluches', { tag: [...CART_MULTIPLE_PRODUCTS] }, async ({ page }) => {
-    await page.goto('/catalog');
-    await waitForPageLoad(page);
+  test('keeps exactly two different products in the cart', { tag: [...CART_MULTIPLE_PRODUCTS, '@outcome:success'] }, async ({ page }) => {
+    await addProduct(page, BEAR);
+    await addProduct(page, RABBIT);
+    await page.goto('/cart');
 
-    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-    const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
-
-    if (count >= 2) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.nth(0).click();
-      await waitForPageLoad(page);
-      const addBtn0 = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn0.isVisible()) { await addBtn0.click(); await page.waitForLoadState('domcontentloaded'); }
-
-      await page.goto('/catalog');
-      await waitForPageLoad(page);
-
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.nth(1).click();
-      await waitForPageLoad(page);
-      const addBtn1 = page.getByRole('button', { name: /Agregar/i });
-      if (await addBtn1.isVisible()) { await addBtn1.click(); await page.waitForLoadState('domcontentloaded'); }
-
-      await page.goto('/cart');
-      await waitForPageLoad(page);
-
-      const cartItems = page.locator('[data-testid="cart-item"]');
-      const itemCount = await cartItems.count();
-      expect(itemCount).toBeGreaterThanOrEqual(1);
-    }
+    await expect(page.getByRole('main').getByRole('heading', { level: 3, name: /^(Oso Coral de prueba|Conejo Coral de prueba)$/ })).toHaveText([BEAR.title, RABBIT.title]);
+    await expect(page.getByRole('button', { name: 'Eliminar', exact: true })).toHaveCount(2);
+    await expect(subtotal(page)).toHaveText('Subtotal productos$140.000');
   });
 });
