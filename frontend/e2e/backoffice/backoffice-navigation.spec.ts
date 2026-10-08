@@ -33,12 +33,11 @@ async function openDashboard(page: Page, testInfo: TestInfo) {
 }
 
 async function shellGeometry(page: Page) {
-  return page.locator('main').evaluate((main) => ({
+  const geometry = await page.getByRole('main').evaluate((main) => ({
     contentLeft: main.getBoundingClientRect().left,
     documentFits: document.documentElement.scrollWidth <= window.innerWidth,
-    overlayVisible: [...document.querySelectorAll('aside ~ div, div.fixed.inset-0')].some((element) =>
-      element.classList.contains('bg-black/40') && getComputedStyle(element).display !== 'none'),
   }))
+  return { ...geometry, overlayVisible: await page.getByTestId('backoffice-sidebar-overlay').isVisible() }
 }
 
 for (const viewport of ['compact', 'portrait'] as const) {
@@ -55,7 +54,7 @@ for (const viewport of ['compact', 'portrait'] as const) {
       await expect(opener).toBeVisible()
 
       await opener.click()
-      const sidebar = page.locator('aside')
+      const sidebar = page.getByRole('complementary')
       await expect(sidebar.getByRole('navigation').getByRole('link')).toHaveText(NAVIGATION_LABELS)
       await sidebar.getByRole('link', { name: /Pedidos/ }).click()
 
@@ -72,11 +71,11 @@ for (const viewport of ['compact', 'portrait'] as const) {
       // quality: allow-duplicate (dismissal contract at each prescribed drawer viewport)
       await openDashboard(page, testInfo)
       await page.getByRole('button', { name: 'Abrir menú', exact: true }).click()
-      await expect(page.locator('aside')).toBeInViewport()
+      await expect(page.getByRole('complementary')).toBeInViewport()
 
       await page.mouse.click(VIEWPORTS[viewport].width - 20, 100)
 
-      await expect(page.locator('aside')).not.toBeInViewport()
+      await expect(page.getByRole('complementary')).not.toBeInViewport()
       await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible()
       expect(await shellGeometry(page)).toEqual({ contentLeft: 0, documentFits: true, overlayVisible: false })
     })
@@ -93,7 +92,7 @@ for (const viewport of ['landscape', 'desktop', 'wide'] as const) {
     }, async ({ page }, testInfo) => {
       // quality: allow-duplicate (navigation contract at each prescribed fixed-sidebar viewport)
       await openDashboard(page, testInfo)
-      const sidebar = page.locator('aside')
+      const sidebar = page.getByRole('complementary')
       await expect(sidebar).toBeInViewport()
       await expect(page.getByRole('button', { name: 'Abrir menú', exact: true })).toBeHidden()
       await expect(sidebar.getByRole('navigation').getByRole('link')).toHaveText(NAVIGATION_LABELS)
@@ -119,14 +118,14 @@ test.describe('backoffice navigation after rotation', () => {
 
     await page.setViewportSize(VIEWPORTS.landscape)
     await expect(page.getByRole('button', { name: 'Abrir menú', exact: true })).toBeHidden()
-    await expect(page.locator('aside')).toBeInViewport()
+    await expect(page.getByRole('complementary')).toBeInViewport()
     expect(await shellGeometry(page)).toEqual({ contentLeft: 220, documentFits: true, overlayVisible: false })
-    await page.locator('aside').getByRole('link', { name: /Dashboard/ }).click()
+    await page.getByRole('complementary').getByRole('link', { name: /Dashboard/ }).click()
     await page.setViewportSize(VIEWPORTS.portrait)
-    await expect(page.locator('aside')).not.toBeInViewport()
+    await expect(page.getByRole('complementary')).not.toBeInViewport()
 
     await page.getByRole('button', { name: 'Abrir menú', exact: true }).click()
-    await page.locator('aside').getByRole('link', { name: /Pedidos/ }).click()
+    await page.getByRole('complementary').getByRole('link', { name: /Pedidos/ }).click()
 
     await expect(page).toHaveURL(/\/backoffice\/pedidos$/)
     await expect(page.getByTestId(`order-row-${ORDER_NUMBER}`)).toContainText(CUSTOMER_NAME)

@@ -27,6 +27,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
       {/* Mobile overlay */}
       {isOpen && (
         <div
+          data-testid="backoffice-sidebar-overlay"
           className="fixed inset-0 bg-black/40 z-40 lg:hidden"
           onClick={onClose}
         />
