@@ -165,9 +165,13 @@ test.describe('Complete Purchase Flow', () => {
         is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
       view_count: 0, huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '',
     };
+    await page.route('**/api/categories/', (route) => route.fulfill({ json: [product.category] }));
+    await page.route('**/api/sizes/', (route) => route.fulfill({ json: [product.size_prices[0].size] }));
+    await page.route(/\/api\/peluches\/(?:\?.*)?$/, (route) => route.fulfill({ json: [product] }));
     await page.route('**/api/peluches/oso-checkout/', (route) => route.fulfill({ json: product }));
     await page.route('**/api/peluches/oso-checkout/reviews/', (route) => route.fulfill({ json: [] }));
-    await page.goto('/peluches/oso-checkout');
+    await page.goto('/catalog');
+    await page.getByRole('link', { name: new RegExp(product.title) }).click();
     await page.getByRole('button', { name: /^Agregar/ }).click();
     await expect(page.getByText('¡Agregado al carrito!')).toBeVisible();
     await page.goto('/checkout');
