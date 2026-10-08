@@ -333,7 +333,9 @@ def test_an_event_for_an_older_attempt_is_ignored(wompi_tx):
     wompi_tx.wompi_id = 'current-attempt'
     wompi_tx.save(update_fields=['wompi_id'])
 
-    WompiService.process_event(_make_event_data('test', tx_id='older-attempt', reference=wompi_tx.reference))
+    WompiService.process_event(_make_event_data(
+        'test', tx_id='older-attempt', status='PENDING', reference=wompi_tx.reference,
+    ))
 
     wompi_tx.refresh_from_db()
     assert wompi_tx.status == WompiTransaction.Status.PENDING

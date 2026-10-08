@@ -46,13 +46,15 @@ class WompiService:
         provider_id = data.get('id') or tx.wompi_id
         new_attempt = allow_new_attempt and provider_id != tx.wompi_id
 
-        # A response from an earlier request must not undo an approval or a
-        # newer attempt. A fresh, explicitly initiated attempt may become pending.
+        # Pending/failure updates from another attempt must not replace the
+        # current attempt. An approval pays the reference, including a retry
+        # whose webhook arrived before its POST response was persisted.
         if tx.status == WompiTransaction.Status.APPROVED and new_status != tx.status:
             return tx
         if tx.status == WompiTransaction.Status.APPROVED and provider_id != tx.wompi_id:
             return tx
-        if tx.wompi_id and provider_id != tx.wompi_id and not allow_new_attempt:
+        if (tx.wompi_id and provider_id != tx.wompi_id and not allow_new_attempt
+                and new_status != WompiTransaction.Status.APPROVED):
             return tx
         if tx.status != WompiTransaction.Status.PENDING and new_status == WompiTransaction.Status.PENDING and not new_attempt:
             return tx
