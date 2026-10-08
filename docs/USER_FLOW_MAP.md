@@ -481,8 +481,8 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 **Steps:**
 
 1. User navigates to `/cart`.
-2. Cart displays each item: image, title, size/color, quantity input, **Eliminar** button, line total.
-3. **Update quantity:** User changes the number input → `cartStore.updateQuantity(key, qty)`.
+2. Cart displays each item: image, title, size/color, decrement/increment controls, **Eliminar** button, and line total.
+3. **Update quantity:** User clicks **+** or **−**; `cartStore.updateQuantity(key, qty)` recalculates the line and subtotal.
 4. **Remove item:** User clicks **Eliminar** → `cartStore.removeFromCart(key)`.
 5. **Subtotal** recalculates: `sum of (unit_price + personalization_cost) * quantity` per item.
 
@@ -492,7 +492,7 @@ Un código incorrecto, vencido, utilizado o de recuperación de contraseña rech
 |-----------|----------|
 | Cart is empty | "Tu carrito está vacío." message |
 | Single item removed | If last item, shows empty cart message |
-| Quantity set to 0 or negative | Minimum enforced by `min={1}` on input |
+| User decrements quantity at one | Quantity remains one; removal uses the separate **Eliminar** control |
 
 ---
 
@@ -791,6 +791,27 @@ denial stops further status checks and returns to recovery.
 ---
 
 ## Reviews Module
+
+### review-display
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Roles** | shared |
+| **Frontend route** | `/peluches/[slug]` |
+| **API endpoints** | `GET /api/peluches/{slug}/reviews/` |
+
+1. The visitor enters a peluch detail through the catalog.
+2. The page loads approved public reviews and displays each reviewer name, rating, and comment.
+3. A guest can read the reviews and receives **Iniciar sesión** instead of submission controls.
+4. For an authenticated visitor, `is_mine` marks an existing own review; the page keeps that review visible and hides the duplicate submission form.
+
+| Condition | Behavior |
+|-----------|----------|
+| No approved reviews | No review cards are rendered. |
+| Guest visitor | Public reviews remain visible and the page offers **Iniciar sesión**. |
+| `is_mine` review | Existing own review remains visible; **Deja tu reseña** and **Publicar reseña** are absent. |
+| Authenticated visitor without an own review | The submission path belongs to `review-submit`. |
 
 ### review-submit
 

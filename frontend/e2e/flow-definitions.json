@@ -681,6 +681,19 @@
         "failure"
       ]
     },
+    "review-display": {
+      "name": "Display peluch reviews",
+      "module": "reviews",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P2",
+      "description": "Visitor reaches a peluch detail through the catalog and sees approved public reviews. A guest receives an Iniciar sesión prompt instead of submission controls; an authenticated visitor whose GET response marks a review is_mine sees that review without another submission form.",
+      "expectedSpecs": 2,
+      "outcomes": [
+        "display"
+      ]
+    },
     "review-submit": {
       "name": "Submit peluch review",
       "module": "reviews",
