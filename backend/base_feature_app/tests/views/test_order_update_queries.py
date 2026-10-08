@@ -54,10 +54,13 @@ def _build_order(customer, count):
             'audio_size_kb': 240,
         }
 
-    authors = get_user_model().objects.bulk_create([
-        get_user_model()(email=f'order-{order.pk}-author-{index}@example.com')
+    author_emails = {
+        f'order-{order.pk}-author-{index}@example.com'
         for index in range(count)
-    ])
+    }
+    User = get_user_model()
+    User.objects.bulk_create([User(email=email) for email in author_emails])
+    authors = list(User.objects.filter(email__in=author_emails))
     OrderStatusHistory.objects.bulk_create([
         OrderStatusHistory(
             order=order,
@@ -68,7 +71,7 @@ def _build_order(customer, count):
         )
         for author in authors
     ])
-    return order, expected_items, {author.email for author in authors}
+    return order, expected_items, author_emails
 
 
 @pytest.fixture
