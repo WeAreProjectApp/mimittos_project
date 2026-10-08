@@ -27,7 +27,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
           onClick={onClose}
         />
       )}
@@ -39,7 +39,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
         zIndex: 50,
         transition: 'transform .25s ease',
         transform: isOpen ? 'translateX(0)' : undefined,
-      }} className={!isOpen ? '-translate-x-full md:translate-x-0' : ''}>
+      }} className={!isOpen ? '-translate-x-full lg:translate-x-0' : ''}>
         <div style={{ padding: '0 20px 28px', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
           <div style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 800, fontSize: 18, color: '#fff', letterSpacing: '-.02em' }}>
             Peluchelandia

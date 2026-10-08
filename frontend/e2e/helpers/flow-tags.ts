@@ -82,6 +82,7 @@ export const APP_DASHBOARD_ACCESS = ['@flow:app-dashboard-access', '@module:app'
 
 // ── Backoffice ──
 export const BACKOFFICE_LOGIN = ['@flow:backoffice-login', '@module:backoffice', '@priority:P2'];
+export const BACKOFFICE_NAVIGATION = ['@flow:backoffice-navigation', '@module:backoffice', '@priority:P3'];
 export const BACKOFFICE_DASHBOARD_DISPLAY = ['@flow:backoffice-dashboard-display', '@module:backoffice', '@priority:P2'];
 export const BACKOFFICE_ORDER_MANAGEMENT = ['@flow:backoffice-order-management', '@module:backoffice', '@priority:P2'];
 

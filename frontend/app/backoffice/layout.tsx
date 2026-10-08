@@ -14,9 +14,9 @@ export default function BackofficeLayout({ children }: { children: React.ReactNo
     <div className="flex min-h-screen" style={{ background: 'var(--cream-warm)' }}>
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex-1 md:ml-[220px] min-w-0">
+      <div className="flex-1 lg:ml-[220px] min-w-0">
         {/* Mobile top bar */}
-        <div className="flex items-center gap-3 md:hidden px-4 py-3 border-b" style={{
+        <div className="flex items-center gap-3 lg:hidden px-4 py-3 border-b" style={{
           background: 'var(--navy)',
           borderColor: 'rgba(255,255,255,.08)',
         }}>
