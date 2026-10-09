@@ -8,11 +8,15 @@ class MediaOptimizationService:
     IMAGE_MAX_SIZE = (1200, 1200)
     IMAGE_QUALITY = 80
     IMAGE_MAX_KB = 500
-    # Pixel ceiling checked from the image header, before any full decode. JPEG/MPO
-    # files are first scaled down with ``draft`` so large phone photos still pass;
-    # other formats (e.g. a few-KB 9000x9000 PNG) would otherwise expand to hundreds
-    # of MB inside a worker capped at MemoryMax=250M. 24 MP is a 6000x4000 photo.
+    # Pixel ceilings checked from the image header, before any full decode, so a
+    # few-KB upload cannot expand to hundreds of MB inside a worker capped at
+    # MemoryMax=250M. JPEG/MPO files are first scaled down with ``draft``: 24 MP
+    # (a 6000x4000 photo) after draft. Other formats always decode at full size
+    # (an RGBA PNG peaks at ~9 bytes per pixel while it is reduced), so they get
+    # 12 MP, the 4032x3024 frame of a phone camera.
+    IMAGE_DRAFT_FORMATS = ('JPEG', 'MPO')
     IMAGE_MAX_PIXELS = 24_000_000
+    IMAGE_MAX_PIXELS_WITHOUT_DRAFT = 4032 * 3024
 
     AUDIO_BITRATE = '64k'
     AUDIO_MAX_DURATION_SEC = 30
@@ -58,21 +62,30 @@ class MediaOptimizationService:
         # Only JPEG/MPO loaders honour draft: they decode at the smallest scale that
         # still covers IMAGE_MAX_SIZE instead of the full-resolution bitmap.
         img.draft('RGB', MediaOptimizationService.IMAGE_MAX_SIZE)
+        if img.format in MediaOptimizationService.IMAGE_DRAFT_FORMATS:
+            max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS
+        else:
+            max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS_WITHOUT_DRAFT
         width, height = img.size
-        if width * height > MediaOptimizationService.IMAGE_MAX_PIXELS:
+        if width * height > max_pixels:
             raise ValidationError(
                 f'La imagen tiene demasiados píxeles ({width}x{height}). '
-                f'Usa una imagen de máximo {MediaOptimizationService.IMAGE_MAX_PIXELS // 1_000_000} megapíxeles.'
+                f'Usa una imagen de máximo {max_pixels // 1_000_000} megapíxeles.'
             )
 
+        # Palette and bilevel images only resample with NEAREST, so every mode other
+        # than RGB/RGBA is still converted first (bounded by the ceilings above).
         if img.mode not in ('RGB', 'RGBA'):
             img = img.convert('RGB')
-        elif img.mode == 'RGBA':
+
+        # Reduce before compositing: the white background and the RGBA -> RGB step
+        # then work on at most IMAGE_MAX_SIZE pixels instead of the full image.
+        img.thumbnail(MediaOptimizationService.IMAGE_MAX_SIZE, Image.LANCZOS)
+
+        if img.mode == 'RGBA':
             bg = Image.new('RGB', img.size, (255, 255, 255))
             bg.paste(img, mask=img.split()[3])
             img = bg
-
-        img.thumbnail(MediaOptimizationService.IMAGE_MAX_SIZE, Image.LANCZOS)
 
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=MediaOptimizationService.IMAGE_QUALITY, optimize=True)

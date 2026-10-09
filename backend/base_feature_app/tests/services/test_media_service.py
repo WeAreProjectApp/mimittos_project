@@ -19,12 +19,12 @@ def _make_fake_file(name='test.jpg', content=b'fake', content_type='image/jpeg')
     return buf
 
 
-def _png_bytes(width, height, idat):
-    """Build a 1-bit grayscale PNG with the given IDAT payload (Pillow opens the header lazily)."""
+def _png_bytes(width, height, idat, bit_depth=1, color_type=0):
+    """Build a PNG (1-bit grayscale by default) with the given IDAT payload; Pillow reads the header lazily."""
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
 
-    header = struct.pack('>IIBBBBB', width, height, 1, 0, 0, 0, 0)
+    header = struct.pack('>IIBBBBB', width, height, bit_depth, color_type, 0, 0, 0)
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', idat) + chunk(b'IEND', b'')
 
 
@@ -37,6 +37,14 @@ def _black_png_bytes(width, height):
 def _jpeg_bytes(width, height):
     buffer = io.BytesIO()
     Image.new('RGB', (width, height), (200, 120, 90)).save(buffer, format='JPEG', quality=85)
+    return buffer.getvalue()
+
+
+def _half_transparent_png_bytes(width, height):
+    image = Image.new('RGBA', (width, height), (200, 30, 30, 255))
+    image.paste((0, 0, 0, 0), (0, 0, width // 2, height))
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
     return buffer.getvalue()
 
 
@@ -127,6 +135,18 @@ def test_optimize_image_scales_large_jpeg_photo_to_max_side(size, expected_size)
     assert Image.open(result).size == expected_size
 
 
+def test_optimize_image_fills_transparent_png_area_with_white():
+    """A 9 MP RGBA PNG is reduced first and only then composited on a white background."""
+    png = _half_transparent_png_bytes(3000, 3000)
+    upload = SimpleUploadedFile('huella.png', png, content_type='image/png')
+
+    result = Image.open(MediaOptimizationService.optimize_image(upload))
+
+    assert result.size == (1200, 1200)
+    assert result.getpixel((150, 600)) == pytest.approx((255, 255, 255), abs=2)
+    assert result.getpixel((1050, 600)) == pytest.approx((200, 30, 30), abs=6)
+
+
 # ---------------------------------------------------------------------------
 # optimize_image — error paths
 # ---------------------------------------------------------------------------
@@ -152,14 +172,17 @@ def test_optimize_image_rejects_png_above_pixel_limit():
     assert 'demasiados píxeles' in str(exc_info.value)
 
 
-def test_optimize_image_pixel_limit_reads_only_png_header():
-    """Without pixel data any decode would fail, so the limit must come from the header."""
-    upload = SimpleUploadedFile('huella.png', _png_bytes(9000, 9000, b''), content_type='image/png')
+def test_optimize_image_rejects_twenty_megapixel_rgba_png_from_header():
+    """Formats without draft stop at 12 MP; with no pixel data only the header can decide."""
+    header_only_png = _png_bytes(5000, 4000, b'', bit_depth=8, color_type=6)
+    upload = SimpleUploadedFile('huella.png', header_only_png, content_type='image/png')
 
     with pytest.raises(ValidationError) as exc_info:
         MediaOptimizationService.optimize_image(upload)
 
-    assert '(9000x9000)' in str(exc_info.value)
+    assert exc_info.value.messages == [
+        'La imagen tiene demasiados píxeles (5000x4000). Usa una imagen de máximo 12 megapíxeles.',
+    ]
 
 
 # ---------------------------------------------------------------------------
