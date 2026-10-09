@@ -531,6 +531,46 @@ def test_validate_token_success(api_client):
     assert response.json()['valid'] is True
 
 
+def _reset_password_with_code(api_client, user, code):
+    PasswordCode.objects.create(user=user, code=code, purpose=PasswordCode.Purpose.PASSWORD_RESET)
+    return api_client.post(
+        reverse('verify_passcode_reset'),
+        {'email': user.email, 'code': code, 'new_password': 'brand-new-pass1'},
+        format='json',
+    )
+
+
+@pytest.mark.django_db
+def test_password_reset_revokes_previous_refresh_token(api_client):
+    """Falla si restablecer la contraseña deja renovar una sesión emitida antes."""
+    User = get_user_model()
+    user = User.objects.create_user(email='reset-refresh@example.com', password='pass1234')
+    tokens = auth_views.generate_auth_tokens(user)
+    reset = _reset_password_with_code(api_client, user, '444444')
+
+    response = api_client.post(reverse('token_refresh'), {'refresh': tokens['refresh']}, format='json')
+
+    assert reset.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert 'access' not in response.json()
+
+
+@pytest.mark.django_db
+def test_password_reset_revokes_previous_access_token(api_client):
+    """Falla si un acceso emitido antes del restablecimiento sigue abriendo endpoints protegidos."""
+    User = get_user_model()
+    user = User.objects.create_user(email='reset-access@example.com', password='pass1234')
+    tokens = auth_views.generate_auth_tokens(user)
+    reset = _reset_password_with_code(api_client, user, '555555')
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+    response = api_client.get(reverse('my-orders'))
+
+    assert reset.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json()['code'] == 'password_changed'
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != 'mysql', reason='requires MySQL row locks')
 def test_verify_registration_consumes_code_once_under_mysql_locking(record_testsuite_property):

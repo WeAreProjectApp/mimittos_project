@@ -134,3 +134,64 @@ def test_token_refresh_rejects_account_made_ineligible(api_client, state):
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert 'access' not in response.json()
+
+
+@pytest.mark.django_db
+def test_token_refresh_rejects_token_issued_before_password_change(api_client):
+    """Falla si un refresh emitido antes de cambiar la contraseña sigue creando acceso."""
+    User = get_user_model()
+    user = User.objects.create_user(email='changed-password@example.com', password='pass1234')
+    refresh = str(RefreshToken.for_user(user))
+    user.set_password('another-pass1')
+    user.save(update_fields=['password'])
+
+    response = api_client.post(reverse('token_refresh'), {'refresh': refresh}, format='json')
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json()['code'] == 'password_changed'
+    assert 'access' not in response.json()
+
+
+@pytest.mark.django_db
+def test_token_refresh_rejects_token_of_deleted_account(api_client):
+    """Falla si el refresh de una cuenta borrada produce un error 500 en lugar de 401."""
+    User = get_user_model()
+    user = User.objects.create_user(email='deleted-account@example.com', password='pass1234')
+    refresh = str(RefreshToken.for_user(user))
+    user.delete()
+
+    response = api_client.post(reverse('token_refresh'), {'refresh': refresh}, format='json')
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json()['code'] == 'no_active_account'
+
+
+@pytest.mark.django_db
+def test_token_refresh_returns_access_without_replacement_refresh(api_client):
+    """Falla si el refresh vuelve a entregar un refresh nuevo que alarga la sesión."""
+    User = get_user_model()
+    user = User.objects.create_user(email='steady-session@example.com', password='pass1234')
+    refresh = str(RefreshToken.for_user(user))
+
+    response = api_client.post(reverse('token_refresh'), {'refresh': refresh}, format='json')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert sorted(response.json()) == ['access']
+
+
+@pytest.mark.django_db
+def test_refreshed_access_from_login_reaches_protected_endpoint(api_client):
+    """Falla si una sesión sin cambio de contraseña deja de funcionar tras renovar el acceso."""
+    User = get_user_model()
+    User.objects.create_user(email='unchanged@example.com', password='pass1234')
+    login = api_client.post(
+        reverse('token_obtain_pair'), {'email': 'unchanged@example.com', 'password': 'pass1234'}, format='json',
+    )
+    refreshed = api_client.post(reverse('token_refresh'), {'refresh': login.json()['refresh']}, format='json')
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refreshed.json()['access']}")
+
+    response = api_client.get(reverse('my-orders'))
+
+    assert (login.status_code, refreshed.status_code) == (status.HTTP_200_OK, status.HTTP_200_OK)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []

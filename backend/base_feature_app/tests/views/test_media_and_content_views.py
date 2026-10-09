@@ -1,18 +1,24 @@
 # ruff: noqa: D100, D103
 
 import io
+import re
 import threading
+import wave
 from unittest.mock import patch
 
 import pytest
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
 from django.db import close_old_connections, connection
+from django.test import override_settings
+from freezegun import freeze_time
 from PIL import Image as PILImage
 from rest_framework.test import APIClient
 
 from base_feature_app.models import PersonalizationMedia, SiteContent
+from base_feature_app.services.media_service import MediaOptimizationService
 from base_feature_app.utils.media_access import MEDIA_ACCESS_SALT
 
 # ---------------------------------------------------------------------------
@@ -158,6 +164,115 @@ def test_upload_media_audio_returns_201_with_duration(mock_optimize, api_client)
         'media_id': response.data['media_id'],
         'media_type': PersonalizationMedia.MediaType.AUDIO,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/media/upload/ — size ceiling and unguessable stored names
+# ---------------------------------------------------------------------------
+
+ONE_MB = 1024 * 1024
+RANDOM_HEX = re.compile(r'[0-9a-f]{32}')
+
+
+def _image_upload(name='huella.jpg', size=0):
+    """Real JPEG; bytes after its end marker are ignored by decoders, so padding keeps it valid."""
+    buf = io.BytesIO()
+    PILImage.new('RGB', (40, 40), (90, 140, 200)).save(buf, format='JPEG')
+    data = buf.getvalue()
+    return SimpleUploadedFile(name, data + b'\0' * max(size - len(data), 0), content_type='image/jpeg')
+
+
+def _wav_upload(name='nota-de-voz.wav', seconds=1):
+    """Real 8 kHz mono WAV: 16 000 bytes per second of silence."""
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b'\0\0' * 8000 * seconds)
+    return SimpleUploadedFile(name, buf.getvalue(), content_type='audio/wav')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('media_type', 'limit_setting', 'make_upload'), [
+    ('huella_image', 'MAX_UPLOAD_IMAGE_MB', lambda: _image_upload(size=ONE_MB + 1)),
+    ('audio', 'MAX_UPLOAD_AUDIO_MB', lambda: _wav_upload(seconds=66)),
+])
+def test_upload_media_rejects_file_over_size_limit(api_client, tmp_path, media_type, limit_setting, make_upload):
+    """Falla si un archivo por encima del tope configurado se procesa o deja una fila."""
+    upload = make_upload()
+
+    with override_settings(MEDIA_ROOT=str(tmp_path), **{limit_setting: 1}):
+        response = api_client.post(
+            '/api/media/upload/', {'file': upload, 'media_type': media_type}, format='multipart',
+        )
+
+    assert response.status_code == 400
+    assert response.data['detail'] == 'El archivo supera el tamaño máximo de 1 MB.'
+    assert PersonalizationMedia.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_upload_media_accepts_image_at_size_limit(api_client, tmp_path):
+    """Falla si el tope rechaza un archivo que mide exactamente el máximo permitido."""
+    upload = _image_upload(size=ONE_MB)
+
+    with override_settings(MEDIA_ROOT=str(tmp_path), MAX_UPLOAD_IMAGE_MB=1):
+        response = api_client.post(
+            '/api/media/upload/', {'file': upload, 'media_type': 'huella_image'}, format='multipart',
+        )
+
+    assert response.status_code == 201
+    assert PersonalizationMedia.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('media_type', 'optimizer', 'make_upload', 'message'), [
+    ('huella_image', 'optimize_image', lambda: _image_upload(), 'La imagen tiene demasiados píxeles.'),
+    ('audio', 'optimize_audio', lambda: _wav_upload(), 'No se pudo procesar el archivo de audio.'),
+])
+def test_upload_media_returns_plain_validation_message(
+    api_client, tmp_path, media_type, optimizer, make_upload, message,
+):
+    """Falla si el 400 muestra al cliente la representación con corchetes del ValidationError."""
+    upload = make_upload()
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)), patch.object(
+        MediaOptimizationService, optimizer, side_effect=ValidationError(message),
+    ):
+        response = api_client.post(
+            '/api/media/upload/', {'file': upload, 'media_type': media_type}, format='multipart',
+        )
+
+    assert response.status_code == 400
+    assert response.data['detail'] == message
+    assert PersonalizationMedia.objects.count() == 0
+
+
+@pytest.mark.django_db
+@freeze_time('2026-10-09 12:00:00')
+@pytest.mark.parametrize(('media_type', 'make_upload', 'extension'), [
+    ('huella_image', lambda: _image_upload('image.jpg'), '.jpg'),
+    ('audio', lambda: _wav_upload('image.wav'), '.mp3'),
+])
+def test_upload_media_stores_file_under_random_name(api_client, tmp_path, media_type, make_upload, extension):
+    """Falla si el nombre elegido por el cliente vuelve predecible la URL pública del archivo."""
+    first_upload, second_upload = make_upload(), make_upload()
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        first = api_client.post(
+            '/api/media/upload/', {'file': first_upload, 'media_type': media_type}, format='multipart',
+        )
+        second = api_client.post(
+            '/api/media/upload/', {'file': second_upload, 'media_type': media_type}, format='multipart',
+        )
+
+    first_name, second_name = PersonalizationMedia.objects.order_by('pk').values_list('file', flat=True)
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert RANDOM_HEX.sub('<hex>', first_name) == f'personalizations/2026/10/<hex>{extension}'
+    assert RANDOM_HEX.sub('<hex>', second_name) == f'personalizations/2026/10/<hex>{extension}'
+    assert first_name != second_name
+    assert first.data['file_url'] == f'http://testserver/media/{first_name}'
 
 
 # ---------------------------------------------------------------------------

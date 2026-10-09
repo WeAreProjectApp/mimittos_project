@@ -5,7 +5,10 @@ from django.urls import path, include
 from django.conf import settings
 from django.contrib import admin
 from base_feature_app.admin import admin_site
-from base_feature_app.serializers.jwt import CaptchaTokenObtainPairSerializer
+from base_feature_app.serializers.jwt import (
+    CaptchaTokenObtainPairSerializer,
+    RevocationAwareTokenRefreshSerializer,
+)
 from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -31,7 +34,11 @@ urlpatterns = [
         TokenObtainPairView.as_view(serializer_class=CaptchaTokenObtainPairSerializer),
         name='token_obtain_pair',
     ),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path(
+        'api/token/refresh/',
+        TokenRefreshView.as_view(serializer_class=RevocationAwareTokenRefreshSerializer),
+        name='token_refresh',
+    ),
     path('api/', include('base_feature_app.urls')),
 ]
 
