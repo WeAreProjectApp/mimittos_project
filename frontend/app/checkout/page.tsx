@@ -99,17 +99,16 @@ export default function CheckoutPage() {
       const guestParam = result.is_guest ? '&guest=1' : ''
       router.push(`/payment?order=${result.order_number}&amount=${result.amount_paid_now}${guestParam}`)
     } catch (err: unknown) {
-      const data = (err as { response?: { data?: { detail?: string; non_field_errors?: string[]; items?: Record<string, string | string[]>[] } } })?.response?.data
+      const data = (err as { response?: { data?: CreateOrderErrorBody } })?.response?.data
       const mediaErrors: Record<number, string[]> = {}
-      if (Array.isArray(data?.items)) {
-        data.items.forEach((line, index) => {
-          if (!line || typeof line !== 'object') return
-          const messages = ['huella_media_id', 'huella_media_token', 'audio_media_id', 'audio_media_token']
-            .flatMap((field) => line[field] ?? [])
-            .filter((message) => typeof message === 'string')
-          if (messages.length) mediaErrors[index] = messages
-        })
-      }
+      // Entries keep each cart-line index whether the API sends an indexed object or an array.
+      Object.entries(data?.items ?? {}).forEach(([index, line]) => {
+        if (!line || typeof line !== 'object') return
+        const messages = ['huella_media_id', 'huella_media_token', 'audio_media_id', 'audio_media_token']
+          .flatMap((field) => line[field] ?? [])
+          .filter((message) => typeof message === 'string')
+        if (messages.length) mediaErrors[Number(index)] = messages
+      })
       setItemErrors(mediaErrors)
       setError(Object.keys(mediaErrors).length
         ? 'Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.'
@@ -333,10 +332,21 @@ const cardHeadStyle: React.CSSProperties = { fontFamily: "'Quicksand', sans-seri
 const cardNumStyle: React.CSSProperties = { width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 13, display: 'grid', placeItems: 'center' }
 const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 }
 const fieldLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--navy)', letterSpacing: '.04em', textTransform: 'uppercase' }
-const fieldInput: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: '12px 14px', fontFamily: 'inherit', fontSize: 14, color: 'var(--navy)', outline: 'none', width: '100%' }
+// 16px keeps iOS Safari from zooming into the focused field (RESPONSIVE_STANDARDS FORM-3).
+const fieldInput: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: '12px 14px', fontFamily: 'inherit', fontSize: 16, color: 'var(--navy)', outline: 'none', width: '100%' }
 const sumRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14, color: 'var(--gray-warm)' }
 const modeOptionStyle: React.CSSProperties = {
   display: 'flex', gap: 12, alignItems: 'flex-start',
   padding: 16, borderRadius: 14, border: '1.5px solid', cursor: 'pointer',
   transition: 'border-color .15s, background .15s',
+}
+
+type CartLineErrors = Record<string, string | string[] | undefined>
+
+// DRF 3.18 reports only the invalid cart lines, keyed by index ({"1": {...}});
+// earlier DRF versions sent one entry per line in an array.
+type CreateOrderErrorBody = {
+  detail?: string
+  non_field_errors?: string[]
+  items?: CartLineErrors[] | Record<string, CartLineErrors>
 }
