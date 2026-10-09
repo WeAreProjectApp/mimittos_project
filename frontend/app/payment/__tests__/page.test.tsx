@@ -32,6 +32,7 @@ const mockUseRouter = useRouter as unknown as jest.Mock
 const mockGetInfo = paymentService.getInfo as jest.Mock
 const mockGetAcceptanceTokens = paymentService.getAcceptanceTokens as jest.Mock
 const mockGetPseBanks = paymentService.getPseBanks as jest.Mock
+const mockProcessNequi = paymentService.processNequi as jest.Mock
 
 const mockPaymentInfo = {
   order_number: 'ORD-001',
@@ -107,5 +108,25 @@ describe('PaymentPage', () => {
     expect(await screen.findByTestId('order-access-recovery')).toBeInTheDocument()
     // quality: allow-mock-only (there is no public UI for a Wompi bootstrap request)
     expect(mockGetAcceptanceTokens).not.toHaveBeenCalled()
+  })
+
+  it('shows the gateway decline reason without leaving the payment page', async () => {
+    // Fails if a declined charge navigates away or hides the reason the customer needs to retry.
+    const push = jest.fn()
+    mockUseRouter.mockReturnValue({ push, replace: jest.fn() })
+    mockProcessNequi.mockResolvedValueOnce({
+      status: 'DECLINED', redirect_url: '', wompi_id: 'wompi-nequi-declined', status_message: 'Fondos insuficientes',
+    })
+    const user = userEvent.setup()
+    render(<Suspense fallback={null}><PaymentPage /></Suspense>)
+    await waitFor(() => expect(screen.getByText('ORD-001')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: /Nequi/i }))
+    await user.click(screen.getByRole('button', { name: /^Pagar/ }))
+
+    expect(await screen.findByText(
+      'Pago rechazado: Fondos insuficientes. Intenta con otro método o corrige tus datos.',
+    )).toBeInTheDocument()
+    expect(push).toHaveBeenCalledTimes(0)
   })
 })
