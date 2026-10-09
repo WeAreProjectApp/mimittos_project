@@ -405,6 +405,8 @@ ADMIN_EMAIL = config('ADMIN_EMAIL', default='')
 # ---------------------------------------------------------------------------
 # Media upload limits
 # ---------------------------------------------------------------------------
-MAX_UPLOAD_IMAGE_MB = config('MAX_UPLOAD_IMAGE_MB', default=5, cast=int)
+# Matches nginx client_max_body_size (15M): phone JPEGs of 24-48 MP can exceed
+# 5 MB, and the server re-encodes every image to at most IMAGE_MAX_KB anyway.
+MAX_UPLOAD_IMAGE_MB = config('MAX_UPLOAD_IMAGE_MB', default=15, cast=int)
 MAX_UPLOAD_AUDIO_MB = config('MAX_UPLOAD_AUDIO_MB', default=10, cast=int)
 DATA_UPLOAD_MAX_MEMORY_SIZE = max(MAX_UPLOAD_IMAGE_MB, MAX_UPLOAD_AUDIO_MB) * 1024 * 1024
