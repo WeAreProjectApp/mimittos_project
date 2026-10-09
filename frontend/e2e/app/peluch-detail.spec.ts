@@ -1,5 +1,6 @@
 import { test, expect } from '../test-with-coverage';
 import type { Page } from '@playwright/test';
+import type { PeluchDetail } from '../../lib/types';
 import { waitForPageLoad } from '../fixtures';
 import {
   PELUCH_DETAIL_SIZE_COLOR,
@@ -18,6 +19,52 @@ async function navigateToFirstPeluch(page: Page) {
   await cards.first().click();
   await waitForPageLoad(page);
   return true;
+}
+
+// Offers a priced huella and a priced corazón, so both inputs render on the detail page.
+const PERSONALIZED_PELUCH: PeluchDetail = {
+  id: 41, title: 'Osito personalizable', slug: 'osito-personalizable', category_name: 'Osos', category_slug: 'osos',
+  lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 1,
+  min_price: 80000, discounted_min_price: 80000, gallery_urls: [], average_rating: 0, review_count: 0,
+  has_huella: true, has_corazon: true, has_audio: false, description: [], specifications: {}, care_instructions: [],
+  category: { id: 1, name: 'Osos', slug: 'osos', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null },
+  available_colors: [{ id: 31, name: 'Coral', slug: 'coral', hex_code: '#d4848a', sort_order: 1, preview_url: null, image_count: 0, images: [] }],
+  size_prices: [{ id: 1, size: { id: 21, label: 'Mediano', slug: 'mediano', cm: '30 cm', sort_order: 1 }, price: 80000,
+    is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0 }],
+  view_count: 0, huella_extra_cost: 15000, corazon_extra_cost: 12000, audio_extra_cost: 0, created_at: '', updated_at: '',
+};
+
+type OrderPayload = { items: Array<Record<string, unknown>> };
+
+async function openPersonalizedPeluch(page: Page) {
+  await page.route('**/api/categories/', (route) => route.fulfill({ json: [PERSONALIZED_PELUCH.category] }));
+  await page.route('**/api/sizes/', (route) => route.fulfill({ json: [PERSONALIZED_PELUCH.size_prices[0].size] }));
+  await page.route(/\/api\/peluches\/(?:\?.*)?$/, (route) => route.fulfill({ json: [PERSONALIZED_PELUCH] }));
+  await page.route('**/api/peluches/osito-personalizable/', (route) => route.fulfill({ json: PERSONALIZED_PELUCH }));
+  await page.route('**/api/peluches/osito-personalizable/reviews/', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/orders/', (route) => route.fulfill({ status: 201, json: {
+    order_number: 'MMT-PERSONALIZADO', total_amount: 95000, deposit_amount: 47500, balance_amount: 47500,
+    shipping_amount: 0, discount_amount: 0, payment_mode: 'deposit', amount_paid_now: 47500, is_guest: true,
+  } }));
+  await page.goto('/catalog');
+  await page.getByRole('link', { name: new RegExp(PERSONALIZED_PELUCH.title) }).click();
+}
+
+// Adds the configured peluch, completes checkout and returns the order request body.
+async function submitOrderFromDetail(page: Page): Promise<OrderPayload> {
+  await page.getByRole('button', { name: /^Agregar/ }).click();
+  await page.getByRole('link', { name: 'Carrito', exact: true }).click();
+  await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click();
+  await page.getByLabel('Nombre completo', { exact: true }).fill('Ana López');
+  await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
+  await page.getByLabel('Celular', { exact: true }).fill('3001234567');
+  await page.getByLabel('Dirección completa', { exact: true }).fill('Calle 50 # 40-20');
+  await page.getByRole('checkbox').check();
+  const orderRequest = page.waitForRequest(
+    (request) => request.url().endsWith('/api/orders/') && request.method() === 'POST',
+  );
+  await page.getByRole('button', { name: /^Ir a pagar/ }).click();
+  return (await orderRequest).postDataJSON() as OrderPayload;
 }
 
 test.describe('Peluch Detail — Personalization', () => {
@@ -68,46 +115,29 @@ test.describe('Peluch Detail — Personalization', () => {
     }
   );
 
-  test('should fill huella text personalization on peluch detail page',
-    { tag: [...PELUCH_DETAIL_HUELLA, '@outcome:display'] },
+  test('sends the typed huella name with the order',
+    { tag: [...PELUCH_DETAIL_HUELLA, '@outcome:success'] },
     async ({ page }) => {
-      const found = await navigateToFirstPeluch(page);
-      if (!found) return;
+      // Fails if the name typed for the huella never reaches the order the workshop receives.
+      await openPersonalizedPeluch(page);
+      await page.getByPlaceholder('Escribe el nombre aquí...').fill('Luna');
 
-      await expect(page).toHaveURL(/.*peluches\/.+/);
+      const payload = await submitOrderFromDetail(page);
 
-      const huellaSection = page.getByText(/🐾 Huella/);
-      if (!await huellaSection.isVisible()) return;
-
-      // The default huella type is "Nombre"; its input is immediately visible
-      const huellaInput = page.getByPlaceholder('Escribe el nombre aquí...');
-      if (await huellaInput.isVisible()) {
-        await huellaInput.fill('Luna');
-        await expect(huellaInput).toHaveValue('Luna');
-      }
+      expect(payload.items[0]).toEqual(expect.objectContaining({ huella_type: 'name', huella_text: 'Luna' }));
     }
   );
 
-  test('should fill corazón phrase personalization on peluch detail page',
-    { tag: [...PELUCH_DETAIL_CORAZON, '@outcome:display'] },
+  test('sends the typed corazón phrase with the order',
+    { tag: [...PELUCH_DETAIL_CORAZON, '@outcome:success'] },
     async ({ page }) => {
-      const found = await navigateToFirstPeluch(page);
-      if (!found) return;
+      // Fails if the corazón phrase typed by the customer never reaches the order the workshop receives.
+      await openPersonalizedPeluch(page);
+      await page.getByPlaceholder('Una frase especial (máx. 50 caracteres)').fill('Te quiero mucho');
 
-      await expect(page).toHaveURL(/.*peluches\/.+/);
+      const payload = await submitOrderFromDetail(page);
 
-      const corazonSection = page.getByText(/💖 Corazón personalizado/);
-      if (!await corazonSection.isVisible()) return;
-
-      const phraseInput = page.getByPlaceholder('Una frase especial (máx. 50 caracteres)');
-      if (!await phraseInput.isVisible()) return;
-
-      const phrase = 'Te quiero mucho';
-      await phraseInput.fill(phrase);
-
-      await expect(phraseInput).toHaveValue(phrase);
-      // Char counter updates to phrase.length/50
-      await expect(page.getByText(`${phrase.length}/50`)).toBeVisible();
+      expect(payload.items[0]).toEqual(expect.objectContaining({ corazon_phrase: 'Te quiero mucho' }));
     }
   );
 
