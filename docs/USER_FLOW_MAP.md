@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.6
-**Last Updated:** 2026-10-08
+**Version:** 1.5.7
+**Last Updated:** 2026-10-09
 
 ---
 
@@ -84,6 +84,7 @@ Use this document to understand each flow's steps, branching conditions, role re
 | `payment-pse-submit` | Pay with PSE | payment | P2 | shared | `/payment` |
 | `payment-pse-legal-entity-nit` | PSE legal entity requires NIT | payment | P2 | shared | `/payment` |
 | `payment-bancolombia-submit` | Pay with Bancolombia | payment | P2 | shared | `/payment` |
+| `purchase-form-controls-compact` | Purchase Controls Without iOS Zoom (compact) | purchase | P2 | shared | `/peluches/[slug]`, `/payment` |
 | `backoffice-analytics-date-filter` | Filter Analytics by Date Range | backoffice | P3 | staff | `/backoffice` |
 | `backoffice-analytics-export-csv` | Export Orders CSV | backoffice | P3 | staff | `/backoffice` |
 | `backoffice-peluch-toggle-featured` | Toggle Peluch Featured | backoffice | P3 | staff | `/backoffice/peluches` |
@@ -1304,6 +1305,17 @@ Private process sends X-Order-Access; an access denial clears the stale capabili
 | **API endpoints** | `POST /api/payment/process/` (via `paymentService.processBancolombia`) |
 
 User selects the **Bancolombia** tab on `/payment`, picks person type and ID type/number, and submits. `paymentService.processBancolombia` returns a `redirect_url`; the browser navigates to Bancolombia for transfer authorization.
+
+### purchase-form-controls-compact
+
+| Field | Value |
+|-------|-------|
+| **Priority** | P2 |
+| **Roles** | shared |
+| **Frontend route** | `/peluches/[slug]`, `/payment` |
+| **API endpoints** | None (typography only; the payment submit itself is `payment-card-submit`) |
+
+At the compact viewport (412×915) the user types the huella name and the corazón phrase on `/peluches/[slug]` and the card holder, expiry and CVV on `/payment`. Every text control renders at 16 px or more, so iOS Safari does not zoom on focus (RESPONSIVE_STANDARDS FORM-3), and the typed values stay in the controls. The checkout form controls follow the same rule and are asserted by the checkout unit tests.
 
 ### backoffice-analytics-date-filter
 
