@@ -1,6 +1,7 @@
 """Test Wompi signatures and transactional payment updates."""
 
 import hashlib
+import logging
 from datetime import datetime
 from threading import Event, Thread
 from unittest.mock import MagicMock, patch
@@ -543,6 +544,118 @@ def test_process_transaction_retains_the_missing_status_error(wompi_tx):
     assert result['status'] == 'ERROR'
     wompi_tx.refresh_from_db()
     assert wompi_tx.status == WompiTransaction.Status.ERROR
+
+
+# ---------------------------------------------------------------------------
+# Approvals the order cannot absorb
+# ---------------------------------------------------------------------------
+
+_UNABSORBABLE_APPROVALS = {
+    'duplicate_approval': {
+        'order_status': 'payment_confirmed', 'tx_status': 'approved',
+        'current_id': 'paid-id', 'event_id': 'second-id',
+    },
+    'order_not_awaiting_payment': {
+        'order_status': 'cancelled', 'tx_status': 'pending',
+        'current_id': 'late-id', 'event_id': 'late-id',
+    },
+}
+_SERVICE_LOGGER = 'base_feature_app.services.wompi_service'
+
+
+def _prepare_unabsorbable_approval(tx, reason):
+    """Persist the state before the approval and return the provider event."""
+    case = _UNABSORBABLE_APPROVALS[reason]
+    WompiTransaction.objects.filter(pk=tx.pk).update(
+        status=case['tx_status'], wompi_id=case['current_id'], raw_response={'id': case['current_id']},
+    )
+    Order.objects.filter(pk=tx.order_id).update(status=case['order_status'])
+    return _make_event_data('test', tx_id=case['event_id'], reference=tx.reference)
+
+
+def _review_message(tx, reason):
+    """Build the expected log line: provider identifiers and order state, without buyer data."""
+    case = _UNABSORBABLE_APPROVALS[reason]
+    return (
+        f'Wompi approval needs manual review (reason={reason} reference={tx.reference} '
+        f"provider_id={case['event_id']} current_provider_id={case['current_id']} "
+        f"order_status={case['order_status']})"
+    )
+
+
+@pytest.mark.django_db
+def test_second_approval_keeps_the_settled_payment(wompi_tx):
+    """Fail if another approved charge replaces the transaction that paid the order."""
+    event = _prepare_unabsorbable_approval(wompi_tx, 'duplicate_approval')
+
+    WompiService.process_event(event)
+
+    wompi_tx.refresh_from_db()
+    assert (wompi_tx.status, wompi_tx.wompi_id, wompi_tx.raw_response) == (
+        WompiTransaction.Status.APPROVED, 'paid-id', {'id': 'paid-id'},
+    )
+    assert wompi_tx.order.status == Order.Status.PAYMENT_CONFIRMED
+
+
+@pytest.mark.django_db
+def test_approval_for_cancelled_order_keeps_the_order_cancelled(wompi_tx):
+    """Fail if a late approval changes the state of a cancelled order."""
+    event = _prepare_unabsorbable_approval(wompi_tx, 'order_not_awaiting_payment')
+
+    WompiService.process_event(event)
+
+    wompi_tx.refresh_from_db()
+    assert wompi_tx.status == WompiTransaction.Status.APPROVED
+    assert wompi_tx.order.status == Order.Status.CANCELLED
+    assert not wompi_tx.order.status_history.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('reason', sorted(_UNABSORBABLE_APPROVALS))
+def test_unabsorbable_approval_logs_one_review_error(wompi_tx, caplog, reason):
+    """Fail if a charge the order cannot absorb leaves no actionable trace."""
+    event = _prepare_unabsorbable_approval(wompi_tx, reason)
+    caplog.set_level(logging.ERROR, logger=_SERVICE_LOGGER)
+
+    WompiService.process_event(event)
+
+    assert caplog.record_tuples == [(_SERVICE_LOGGER, logging.ERROR, _review_message(wompi_tx, reason))]
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+@pytest.mark.parametrize('reason', sorted(_UNABSORBABLE_APPROVALS))
+def test_unabsorbable_approval_alerts_staff_after_commit(
+    wompi_tx, mailoutbox, django_capture_on_commit_callbacks, reason,
+):
+    """Fail if staff is not told, once the decision commits, about a charge to review."""
+    event = _prepare_unabsorbable_approval(wompi_tx, reason)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        WompiService.process_event(event)
+        assert mailoutbox == []
+
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == ['admin@example.com']
+    assert mailoutbox[0].subject == f'Revisar pago Wompi — {wompi_tx.order.order_number}'
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+@pytest.mark.parametrize('order_status', [Order.Status.PAYMENT_CONFIRMED, Order.Status.CANCELLED])
+def test_redelivered_settled_approval_raises_no_review_alert(
+    wompi_tx, mailoutbox, caplog, django_capture_on_commit_callbacks, order_status,
+):
+    """Fail if a redelivered approval of the paying transaction is reported as a new charge."""
+    _prepare_unabsorbable_approval(wompi_tx, 'duplicate_approval')
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=order_status)
+    caplog.set_level(logging.ERROR, logger=_SERVICE_LOGGER)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        WompiService.process_event(_make_event_data('test', tx_id='paid-id', reference=wompi_tx.reference))
+
+    assert caplog.record_tuples == []
+    assert mailoutbox == []
 
 
 # ---------------------------------------------------------------------------
