@@ -8,6 +8,17 @@ class MediaOptimizationService:
     IMAGE_MAX_SIZE = (1200, 1200)
     IMAGE_QUALITY = 80
     IMAGE_MAX_KB = 500
+    # Pixel ceilings checked from the image header, before any full decode, so a
+    # few-KB upload cannot expand to hundreds of MB inside a worker capped at
+    # MemoryMax=250M. JPEG/MPO files are first scaled down with ``draft``: 24 MP
+    # (a 6000x4000 photo) after draft. Other formats always decode at full size
+    # (an RGBA PNG peaks at ~8 bytes per pixel while it is composited), so they
+    # stop at a 4K frame (3840x2160, ~8.3 MP): phone, tablet and 4K screenshots.
+    IMAGE_DRAFT_FORMATS = ('JPEG', 'MPO')
+    IMAGE_MAX_PIXELS = 24_000_000
+    IMAGE_MAX_PIXELS_LABEL = '24 megapíxeles'
+    IMAGE_MAX_PIXELS_WITHOUT_DRAFT = 3840 * 2160
+    IMAGE_MAX_PIXELS_WITHOUT_DRAFT_LABEL = '4K (3840x2160)'
 
     AUDIO_BITRATE = '64k'
     AUDIO_MAX_DURATION_SEC = 30
@@ -35,6 +46,8 @@ class MediaOptimizationService:
         'video/mp4': 'mp4',
         'video/3gpp': '3gp',
     }
+    # ffmpeg has no 'opus' demuxer: Ogg Opus files (e.g. WhatsApp voice notes) decode as 'ogg'.
+    AUDIO_DECODER_FORMATS = {'opus': 'ogg'}
 
     @staticmethod
     def optimize_image(file) -> InMemoryUploadedFile:
@@ -48,11 +61,29 @@ class MediaOptimizationService:
         except Exception:
             raise ValidationError('El archivo no es una imagen válida.')
 
+        # Only JPEG/MPO loaders honour draft: they decode at the smallest scale that
+        # still covers IMAGE_MAX_SIZE instead of the full-resolution bitmap.
+        img.draft('RGB', MediaOptimizationService.IMAGE_MAX_SIZE)
+        if img.format in MediaOptimizationService.IMAGE_DRAFT_FORMATS:
+            max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS
+            max_label = MediaOptimizationService.IMAGE_MAX_PIXELS_LABEL
+        else:
+            max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS_WITHOUT_DRAFT
+            max_label = MediaOptimizationService.IMAGE_MAX_PIXELS_WITHOUT_DRAFT_LABEL
+        width, height = img.size
+        if width * height > max_pixels:
+            raise ValidationError(
+                f'La imagen tiene demasiados píxeles ({width}x{height}). '
+                f'Usa una imagen de máximo {max_label}.'
+            )
+
         if img.mode not in ('RGB', 'RGBA'):
             img = img.convert('RGB')
         elif img.mode == 'RGBA':
+            # Composite at full size with the image itself as mask: no split() band
+            # copies, and no full-size premultiplied copy as resizing RGBA would need.
             bg = Image.new('RGB', img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[3])
+            bg.paste(img, mask=img)
             img = bg
 
         img.thumbnail(MediaOptimizationService.IMAGE_MAX_SIZE, Image.LANCZOS)
@@ -95,11 +126,19 @@ class MediaOptimizationService:
         except ImportError:
             raise ValidationError('pydub no está instalado.')
 
+        decoder_format = MediaOptimizationService.AUDIO_DECODER_FORMATS.get(fmt, fmt)
         try:
-            audio = AudioSegment.from_file(file, format=fmt)
+            # Decode at most AUDIO_MAX_DURATION_SEC: decoding the whole upload before
+            # trimming kept the full PCM (about 3x its size) in the worker's memory.
+            audio = AudioSegment.from_file(
+                file,
+                format=decoder_format,
+                duration=MediaOptimizationService.AUDIO_MAX_DURATION_SEC,
+            )
         except Exception:
             raise ValidationError('No se pudo procesar el archivo de audio.')
 
+        # Defensive trim: the decoder already stops at the limit.
         max_ms = MediaOptimizationService.AUDIO_MAX_DURATION_SEC * 1000
         if len(audio) > max_ms:
             audio = audio[:max_ms]
