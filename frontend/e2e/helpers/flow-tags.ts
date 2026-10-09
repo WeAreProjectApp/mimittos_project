@@ -57,6 +57,7 @@ export const PURCHASE_COMPLETE_FLOW = ['@flow:purchase-complete-flow', '@module:
 export const PURCHASE_MULTIPLE_ITEMS = ['@flow:purchase-multiple-items', '@module:purchase', '@priority:P2'];
 export const PURCHASE_DISABLED_EMPTY_CART = ['@flow:purchase-disabled-empty-cart', '@module:purchase', '@priority:P2'];
 export const PURCHASE_LOADING_STATE = ['@flow:purchase-loading-state', '@module:purchase', '@priority:P3'];
+export const PURCHASE_FORM_CONTROLS_COMPACT = ['@flow:purchase-form-controls-compact', '@module:purchase', '@priority:P2'];
 
 // ── Peluch Detail (Personalization) ──
 export const PELUCH_DETAIL_SIZE_COLOR = ['@flow:peluch-detail-size-color-selection', '@module:catalog', '@priority:P2'];

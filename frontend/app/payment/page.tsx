@@ -524,5 +524,6 @@ const formCard: React.CSSProperties = { background: '#fff', borderRadius: 16, pa
 const formTitle: React.CSSProperties = { fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--navy)', marginBottom: 2 }
 const field: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 }
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--navy)', letterSpacing: '.04em', textTransform: 'uppercase' }
-const inp: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '11px 13px', fontFamily: 'inherit', fontSize: 14, color: 'var(--navy)', outline: 'none', width: '100%' }
+// 16 px minimum: smaller text controls make iOS Safari zoom on focus (RESPONSIVE_STANDARDS FORM-3).
+const inp: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '11px 13px', fontFamily: 'inherit', fontSize: 16, color: 'var(--navy)', outline: 'none', width: '100%' }
 const note: React.CSSProperties = { display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: 'var(--gray-warm)', lineHeight: 1.5, marginTop: 4, paddingBottom: 4 }
