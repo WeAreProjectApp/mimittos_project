@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
 from django.db import close_old_connections, connection
@@ -17,6 +18,7 @@ from PIL import Image as PILImage
 from rest_framework.test import APIClient
 
 from base_feature_app.models import PersonalizationMedia, SiteContent
+from base_feature_app.services.media_service import MediaOptimizationService
 from base_feature_app.utils.media_access import MEDIA_ACCESS_SALT
 
 # ---------------------------------------------------------------------------
@@ -222,6 +224,29 @@ def test_upload_media_accepts_image_at_size_limit(api_client, tmp_path):
 
     assert response.status_code == 201
     assert PersonalizationMedia.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('media_type', 'optimizer', 'make_upload', 'message'), [
+    ('huella_image', 'optimize_image', lambda: _image_upload(), 'La imagen tiene demasiados píxeles.'),
+    ('audio', 'optimize_audio', lambda: _wav_upload(), 'No se pudo procesar el archivo de audio.'),
+])
+def test_upload_media_returns_plain_validation_message(
+    api_client, tmp_path, media_type, optimizer, make_upload, message,
+):
+    """Falla si el 400 muestra al cliente la representación con corchetes del ValidationError."""
+    upload = make_upload()
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)), patch.object(
+        MediaOptimizationService, optimizer, side_effect=ValidationError(message),
+    ):
+        response = api_client.post(
+            '/api/media/upload/', {'file': upload, 'media_type': media_type}, format='multipart',
+        )
+
+    assert response.status_code == 400
+    assert response.data['detail'] == message
+    assert PersonalizationMedia.objects.count() == 0
 
 
 @pytest.mark.django_db

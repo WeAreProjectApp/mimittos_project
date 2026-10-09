@@ -2,6 +2,7 @@ import logging
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -24,6 +25,13 @@ def _upload_limit_mb(media_type):
     if media_type == PersonalizationMedia.MediaType.HUELLA_IMAGE:
         return settings.MAX_UPLOAD_IMAGE_MB
     return settings.MAX_UPLOAD_AUDIO_MB
+
+
+def _rejection_detail(exc):
+    """str() of a Django ValidationError is "['msg']"; the client gets the plain messages."""
+    if isinstance(exc, ValidationError):
+        return ' '.join(exc.messages)
+    return str(exc)
 
 
 @api_view(['POST'])
@@ -67,7 +75,7 @@ def upload_media(request):
             getattr(file, 'content_type', None),
             getattr(file, 'size', None),
         )
-        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': _rejection_detail(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     # /media/ is public: a random name keeps the URL a capability instead of the client's filename.
     optimized_file.name = f'{uuid.uuid4().hex}{STORED_EXTENSIONS[media_type]}'
