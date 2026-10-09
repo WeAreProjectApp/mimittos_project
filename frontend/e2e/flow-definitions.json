@@ -481,10 +481,11 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User opens corazón section, enters phrase (max 50 chars), extra cost added to total",
+      "description": "User opens corazón section, enters phrase (max 50 chars), extra cost added to total; the typed phrase travels as corazon_phrase in the order item payload",
       "expectedSpecs": 1,
       "outcomes": [
-        "display"
+        "display",
+        "success"
       ]
     },
     "peluch-detail-personalization-audio": {
