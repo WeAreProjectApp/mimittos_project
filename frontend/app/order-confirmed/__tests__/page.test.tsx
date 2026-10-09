@@ -98,4 +98,16 @@ describe('OrderConfirmedPage', () => {
     expect(mockCheckStatus).toHaveBeenCalledTimes(1)
     expect(useCartStore.getState().items).toEqual([retainedItem])
   })
+
+  it('keeps the cart after a declined payment', async () => {
+    // Fails if a declined charge empties the cart the decline screen promises to keep for the retry.
+    const retainedItem = { peluch_id: 1, size_id: 1, color_id: 1, quantity: 2 }
+    useCartStore.setState({ items: [retainedItem] as never[] })
+    mockGetInfo.mockResolvedValue({ ...paymentInfo, status: 'declined' })
+
+    render(<Suspense fallback={null}><OrderConfirmedPage /></Suspense>)
+
+    expect(await screen.findByText('Pago rechazado por la pasarela')).toBeInTheDocument()
+    expect(useCartStore.getState().items).toEqual([retainedItem])
+  })
 })
