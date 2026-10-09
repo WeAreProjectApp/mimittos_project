@@ -8,6 +8,11 @@ class MediaOptimizationService:
     IMAGE_MAX_SIZE = (1200, 1200)
     IMAGE_QUALITY = 80
     IMAGE_MAX_KB = 500
+    # Pixel ceiling checked from the image header, before any full decode. JPEG/MPO
+    # files are first scaled down with ``draft`` so large phone photos still pass;
+    # other formats (e.g. a few-KB 9000x9000 PNG) would otherwise expand to hundreds
+    # of MB inside a worker capped at MemoryMax=250M. 24 MP is a 6000x4000 photo.
+    IMAGE_MAX_PIXELS = 24_000_000
 
     AUDIO_BITRATE = '64k'
     AUDIO_MAX_DURATION_SEC = 30
@@ -35,6 +40,8 @@ class MediaOptimizationService:
         'video/mp4': 'mp4',
         'video/3gpp': '3gp',
     }
+    # ffmpeg has no 'opus' demuxer: Ogg Opus files (e.g. WhatsApp voice notes) decode as 'ogg'.
+    AUDIO_DECODER_FORMATS = {'opus': 'ogg'}
 
     @staticmethod
     def optimize_image(file) -> InMemoryUploadedFile:
@@ -47,6 +54,16 @@ class MediaOptimizationService:
             img = Image.open(file)
         except Exception:
             raise ValidationError('El archivo no es una imagen válida.')
+
+        # Only JPEG/MPO loaders honour draft: they decode at the smallest scale that
+        # still covers IMAGE_MAX_SIZE instead of the full-resolution bitmap.
+        img.draft('RGB', MediaOptimizationService.IMAGE_MAX_SIZE)
+        width, height = img.size
+        if width * height > MediaOptimizationService.IMAGE_MAX_PIXELS:
+            raise ValidationError(
+                f'La imagen tiene demasiados píxeles ({width}x{height}). '
+                f'Usa una imagen de máximo {MediaOptimizationService.IMAGE_MAX_PIXELS // 1_000_000} megapíxeles.'
+            )
 
         if img.mode not in ('RGB', 'RGBA'):
             img = img.convert('RGB')
@@ -95,11 +112,19 @@ class MediaOptimizationService:
         except ImportError:
             raise ValidationError('pydub no está instalado.')
 
+        decoder_format = MediaOptimizationService.AUDIO_DECODER_FORMATS.get(fmt, fmt)
         try:
-            audio = AudioSegment.from_file(file, format=fmt)
+            # Decode at most AUDIO_MAX_DURATION_SEC: decoding the whole upload before
+            # trimming kept the full PCM (about 3x its size) in the worker's memory.
+            audio = AudioSegment.from_file(
+                file,
+                format=decoder_format,
+                duration=MediaOptimizationService.AUDIO_MAX_DURATION_SEC,
+            )
         except Exception:
             raise ValidationError('No se pudo procesar el archivo de audio.')
 
+        # Defensive trim: the decoder already stops at the limit.
         max_ms = MediaOptimizationService.AUDIO_MAX_DURATION_SEC * 1000
         if len(audio) > max_ms:
             audio = audio[:max_ms]
