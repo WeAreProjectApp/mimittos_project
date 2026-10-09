@@ -227,4 +227,17 @@ describe('CheckoutPage', () => {
     expect(clearCart).not.toHaveBeenCalled()
     jest.restoreAllMocks()
   })
+
+  const checkoutFieldLabels = [
+    'Nombre completo', 'Correo electrónico', 'Celular', 'Departamento',
+    'Ciudad', 'Código postal', 'Dirección completa', 'Notas para el pedido (opcional)',
+  ]
+
+  it.each(checkoutFieldLabels)('renders the %s field at 16px to prevent iOS focus zoom', async (label) => {
+    // Fails if a checkout field drops below 16px, which makes iOS Safari zoom in on focus (FORM-3).
+    setCartState({ items: [peluchItem], clearCart: jest.fn() })
+    render(<CheckoutPage />)
+
+    expect(await screen.findByLabelText(label)).toHaveStyle({ fontSize: '16px' })
+  })
 })

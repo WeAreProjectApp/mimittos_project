@@ -332,7 +332,8 @@ const cardHeadStyle: React.CSSProperties = { fontFamily: "'Quicksand', sans-seri
 const cardNumStyle: React.CSSProperties = { width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 13, display: 'grid', placeItems: 'center' }
 const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 }
 const fieldLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--navy)', letterSpacing: '.04em', textTransform: 'uppercase' }
-const fieldInput: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: '12px 14px', fontFamily: 'inherit', fontSize: 14, color: 'var(--navy)', outline: 'none', width: '100%' }
+// 16px keeps iOS Safari from zooming into the focused field (RESPONSIVE_STANDARDS FORM-3).
+const fieldInput: React.CSSProperties = { background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: '12px 14px', fontFamily: 'inherit', fontSize: 16, color: 'var(--navy)', outline: 'none', width: '100%' }
 const sumRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14, color: 'var(--gray-warm)' }
 const modeOptionStyle: React.CSSProperties = {
   display: 'flex', gap: 12, alignItems: 'flex-start',
