@@ -1,6 +1,6 @@
 {
-  "version": "1.5.6",
-  "lastUpdated": "2026-10-08",
+  "version": "1.5.7",
+  "lastUpdated": "2026-10-09",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -1431,6 +1431,19 @@
         "success",
         "error",
         "failure"
+      ]
+    },
+    "purchase-form-controls-compact": {
+      "name": "Type purchase details at compact width without iOS zoom",
+      "module": "purchase",
+      "roles": [
+        "shared"
+      ],
+      "priority": "P2",
+      "description": "At the compact 412x915 viewport the user types the huella name and the corazón phrase on /peluches/[slug] and the card holder, expiry and CVV on /payment. Every text control renders at 16 px or more so iOS Safari does not zoom on focus (RESPONSIVE_STANDARDS FORM-3), and the typed values stay in the controls.",
+      "expectedSpecs": 1,
+      "outcomes": [
+        "success"
       ]
     }
   }

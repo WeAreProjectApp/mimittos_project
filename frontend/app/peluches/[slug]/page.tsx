@@ -494,7 +494,7 @@ export default function PeluchDetailPage() {
                       onChange={(e) => setHuellaText(e.target.value)}
                       placeholder={HUELLA_TYPES.find((h) => h.id === huellaType)?.placeholder}
                       maxLength={30}
-                      style={{ width: '100%', background: '#fff', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '10px 14px', fontFamily: 'inherit', fontSize: 13, color: 'var(--navy)' }}
+                      style={{ width: '100%', background: '#fff', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '10px 14px', fontFamily: 'inherit', fontSize: 16, color: 'var(--navy)' }}
                     />
                   )}
                   {huellaType === 'image' && (
@@ -525,7 +525,7 @@ export default function PeluchDetailPage() {
                     value={corazonPhrase}
                     onChange={(e) => setCorazonPhrase(e.target.value.slice(0, 50))}
                     placeholder="Una frase especial (máx. 50 caracteres)"
-                    style={{ width: '100%', background: '#fff', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '10px 14px', fontFamily: 'inherit', fontSize: 13, color: 'var(--navy)' }}
+                    style={{ width: '100%', background: '#fff', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 10, padding: '10px 14px', fontFamily: 'inherit', fontSize: 16, color: 'var(--navy)' }}
                   />
                   <div style={{ fontSize: 11, color: 'var(--gray-warm)', marginTop: 4, textAlign: 'right' }}>{corazonPhrase.length}/50</div>
                 </div>
@@ -763,7 +763,7 @@ export default function PeluchDetailPage() {
                       onChange={(e) => setReviewComment(e.target.value)}
                       placeholder="Cuéntanos cómo fue tu experiencia con este peluche... (mínimo 10 caracteres)"
                       rows={4}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid rgba(27,42,74,.12)', fontSize: 13, fontFamily: 'inherit', color: 'var(--navy)', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid rgba(27,42,74,.12)', fontSize: 16, fontFamily: 'inherit', color: 'var(--navy)', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
                     />
                   </div>
 
