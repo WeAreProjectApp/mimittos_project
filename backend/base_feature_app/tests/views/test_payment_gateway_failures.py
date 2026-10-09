@@ -11,7 +11,7 @@ between a gateway outage and a 500 traceback reaching the checkout page, and it
 also decides how much of Wompi's raw error is surfaced as `wompi_detail`.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from rest_framework.test import APIClient
@@ -85,6 +85,17 @@ def _bancolombia_payload(order_number):
     return {
         'order_number': order_number,
         'method': 'BANCOLOMBIA_TRANSFER',
+        'acceptance_token': 'acc',
+        'acceptance_personal_auth_token': 'per',
+    }
+
+
+def _card_payload(order_number):
+    """CARD needs no bank redirect, so the real service never polls the provider."""
+    return {
+        'order_number': order_number,
+        'method': 'CARD',
+        'card_token': 'tok_synthetic',
         'acceptance_token': 'acc',
         'acceptance_personal_auth_token': 'per',
     }
@@ -249,6 +260,71 @@ def test_process_payment_refuses_to_charge_an_approved_order_twice(mock_process,
     assert response.status_code == 400
     assert response.data['detail'] == 'Este pedido ya fue pagado.'
     mock_process.assert_not_called()
+
+
+_NOT_PAYABLE_DETAIL = 'Este pedido ya no admite pagos. Vuelve al carrito para crear uno nuevo.'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('order_status', [
+    Order.Status.CANCELLED,
+    Order.Status.PAYMENT_CONFIRMED,
+    Order.Status.IN_PRODUCTION,
+    Order.Status.SHIPPED,
+    Order.Status.DELIVERED,
+])
+@patch(_WOMPI_CALL)
+def test_process_payment_refuses_an_order_no_longer_awaiting_payment(
+    mock_process, api_client, wompi_tx, order_status,
+):
+    """Catches: charging an order that an approval can no longer confirm (e.g. cancelled on decline)."""
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=order_status)
+    mock_process.return_value = {'status': 'APPROVED', 'redirect_url': '', 'wompi_id': 'late-id', 'status_message': ''}
+
+    response = api_client.post(
+        _PROCESS_URL, _bancolombia_payload(wompi_tx.order.order_number), format='json'
+    )
+
+    assert response.status_code == 409
+    assert response.data['detail'] == _NOT_PAYABLE_DETAIL
+    mock_process.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_cancelled_order_card_charge_never_reaches_wompi(api_client, wompi_tx):
+    """Catches: a cancelled order charged and approved with no order left to confirm."""
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=Order.Status.CANCELLED)
+    provider = MagicMock(status_code=201)
+    provider.json.return_value = {'data': {'id': 'late-card', 'status': 'APPROVED', 'payment_method_type': 'CARD'}}
+
+    with patch('base_feature_app.services.wompi_service.requests.post', return_value=provider) as wompi_post:
+        api_client.post(_PROCESS_URL, _card_payload(wompi_tx.order.order_number), format='json')
+
+    wompi_tx.refresh_from_db()
+    wompi_post.assert_not_called()
+    assert (wompi_tx.status, wompi_tx.wompi_id) == (WompiTransaction.Status.PENDING, '')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('transaction_status', [
+    WompiTransaction.Status.PENDING,
+    WompiTransaction.Status.DECLINED,
+    WompiTransaction.Status.ERROR,
+])
+@patch(_WOMPI_CALL)
+def test_process_payment_charges_an_order_awaiting_payment(
+    mock_process, api_client, wompi_tx, transaction_status,
+):
+    """Catches: the payable-order guard blocking a retry on an order still awaiting payment."""
+    WompiTransaction.objects.filter(pk=wompi_tx.pk).update(status=transaction_status)
+    mock_process.return_value = {'status': 'PENDING', 'redirect_url': '', 'wompi_id': 'retry-id', 'status_message': ''}
+
+    response = api_client.post(
+        _PROCESS_URL, _bancolombia_payload(wompi_tx.order.order_number), format='json'
+    )
+
+    assert response.status_code == 200
+    mock_process.assert_called_once()
 
 
 @pytest.mark.django_db

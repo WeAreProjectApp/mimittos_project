@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from base_feature_app.models import Order, OrderItem, OrderStatusHistory
+from base_feature_app.models import Order, OrderItem, OrderStatusHistory, PeluchSizePrice
 from base_feature_app.serializers.order import (
     OrderCreateSerializer, OrderListSerializer, OrderDetailSerializer,
     OrderTrackingSerializer, OrderStatusUpdateSerializer, OrderTrackingUpdateSerializer,
@@ -35,10 +35,19 @@ def create_order(request):
             user = None
             is_guest = True
 
+    # Only business outcomes become 400. Any other failure (database, deploy
+    # drift, bug) propagates as a logged 500 instead of passing as a buyer error.
     try:
         order = OrderService.create_order(serializer.validated_data, user=user)
-    except Exception as exc:
+    except ValueError as exc:
+        # A personalization file was retired between validation and checkout.
         return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except PeluchSizePrice.DoesNotExist:
+        # The size stopped being sold between validation and checkout.
+        return Response(
+            {'detail': 'Este tamaño ya no está disponible para este peluche. Actualiza tu carrito.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     return Response(
         {

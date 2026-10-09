@@ -45,6 +45,7 @@ class WompiService:
         new_status = raw_status if raw_status in WompiTransaction.Status.values else WompiTransaction.Status.PENDING
         provider_id = data.get('id') or tx.wompi_id
         new_attempt = allow_new_attempt and provider_id != tx.wompi_id
+        previous_status = tx.status
 
         # Pending/failure updates from another attempt must not replace the
         # current attempt. An approval pays the reference, including a retry
@@ -52,6 +53,9 @@ class WompiService:
         if tx.status == WompiTransaction.Status.APPROVED and new_status != tx.status:
             return tx
         if tx.status == WompiTransaction.Status.APPROVED and provider_id != tx.wompi_id:
+            # Another provider transaction charged a reference that is already
+            # paid. The current payment stays; the second charge needs a person.
+            WompiService._flag_approval_for_review(order, tx, provider_id, 'duplicate_approval')
             return tx
         if (tx.wompi_id and provider_id != tx.wompi_id and not allow_new_attempt
                 and new_status != WompiTransaction.Status.APPROVED):
@@ -74,7 +78,26 @@ class WompiService:
                 WompiTransaction.Status.DECLINED, WompiTransaction.Status.VOIDED, WompiTransaction.Status.ERROR,
             ):
                 tx.order = OrderService.update_status(order, Order.Status.CANCELLED, notes=notes)
+        elif new_status == WompiTransaction.Status.APPROVED and previous_status != WompiTransaction.Status.APPROVED:
+            # The order no longer awaits payment (e.g. cancelled after a decline
+            # or abandonment), so this approval confirms nothing by itself.
+            WompiService._flag_approval_for_review(order, tx, provider_id, 'order_not_awaiting_payment')
         return tx
+
+    @staticmethod
+    def _flag_approval_for_review(order: Order, tx: WompiTransaction, provider_id: str, reason: str) -> None:
+        """Record an approval the order cannot absorb and alert staff once the decision commits."""
+        from base_feature_app.services.notification_service import NotificationService
+
+        logger.error(
+            'Wompi approval needs manual review (reason=%s reference=%s provider_id=%s '
+            'current_provider_id=%s order_status=%s)',
+            reason, tx.reference, provider_id, tx.wompi_id, order.status,
+        )
+        transaction.on_commit(
+            partial(NotificationService.notify_payment_review, order, tx.reference, provider_id, reason),
+            robust=True,
+        )
 
     @staticmethod
     @transaction.atomic

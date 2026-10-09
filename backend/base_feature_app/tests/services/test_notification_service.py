@@ -204,6 +204,57 @@ def test_notify_new_order_admin_returns_false_on_smtp_error(mock_mail, base_orde
 
 
 # ---------------------------------------------------------------------------
+# notify_payment_review
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail')
+@override_settings(ADMIN_EMAIL='admin@peluchelandia.com')
+def test_notify_payment_review_sends_admin_email_when_configured(mock_mail, base_order):
+    result = NotificationService.notify_payment_review(base_order, 'MMT-REF-1', 'second-id', 'duplicate_approval')
+
+    subject, body, _sender, recipients = mock_mail.call_args.args
+    assert result is True
+    assert recipients == ['admin@peluchelandia.com']
+    assert subject == 'Revisar pago Wompi — MMT-20260420-N001'
+    assert 'Wompi aprobó la transacción second-id (referencia MMT-REF-1)' in body
+
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail')
+@override_settings(ADMIN_EMAIL='admin@peluchelandia.com')
+@pytest.mark.parametrize(('reason', 'situation'), [
+    ('duplicate_approval', 'que ya estaba pagado con otra transacción'),
+    ('order_not_awaiting_payment', 'que ya no esperaba pago'),
+], ids=['duplicate_approval', 'order_not_awaiting_payment'])
+def test_notify_payment_review_explains_the_reason(mock_mail, base_order, reason, situation):
+    NotificationService.notify_payment_review(base_order, 'MMT-REF-1', 'second-id', reason)
+
+    assert situation in mock_mail.call_args.args[1]
+
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail')
+@override_settings(ADMIN_EMAIL='')
+def test_notify_payment_review_skips_without_admin_email(mock_mail, base_order):
+    result = NotificationService.notify_payment_review(base_order, 'MMT-REF-1', 'second-id', 'duplicate_approval')
+
+    assert result is False
+    mock_mail.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch('base_feature_app.services.notification_service.send_mail', side_effect=RuntimeError('smtp-secret'))
+@override_settings(ADMIN_EMAIL='admin@peluchelandia.com')
+def test_payment_review_smtp_failure_logs_only_the_error_type(mock_mail, base_order, caplog):
+    result = NotificationService.notify_payment_review(base_order, 'MMT-REF-1', 'second-id', 'duplicate_approval')
+
+    assert result is False
+    assert 'payment review email delivery failed (error_type=RuntimeError)' in caplog.text
+    assert 'smtp-secret' not in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # notify_status_change
 # ---------------------------------------------------------------------------
 
