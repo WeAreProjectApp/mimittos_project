@@ -130,8 +130,12 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(
         days=config('DJANGO_JWT_REFRESH_DAYS', default=7, cast=int)
     ),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    # Rotation without the blacklist app let a reused refresh token extend a
+    # session forever; refresh tokens now expire at their original lifetime.
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    # Tokens carry a password-hash claim, so a password change revokes them.
+    'CHECK_REVOKE_TOKEN': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_AUTHENTICATION_RULE': 'base_feature_app.authentication.user_authentication_rule',
 }
