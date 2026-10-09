@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from base_feature_app.models import WompiTransaction
+from base_feature_app.models import Order, WompiTransaction
 from base_feature_app.services.order_access_service import ORDER_ACCESS_ERROR, OrderAccessService
 from base_feature_app.services.wompi_service import WompiService
 
@@ -108,6 +108,15 @@ def process_payment(request):
 
     if tx.status == WompiTransaction.Status.APPROVED:
         return Response({'detail': 'Este pedido ya fue pagado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # A cancelled (declined, abandoned or staff-cancelled) or already advanced
+    # order can no longer be confirmed by a payment: charging it would take the
+    # buyer's money while the order stays outside the production flow.
+    if tx.order.status != Order.Status.PENDING_PAYMENT:
+        return Response(
+            {'detail': 'Este pedido ya no admite pagos. Vuelve al carrito para crear uno nuevo.'},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     if method == 'CARD':
         card_token = request.data.get('card_token', '')

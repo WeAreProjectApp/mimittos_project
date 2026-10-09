@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 COOLDOWN_HOURS = 24
 
+PAYMENT_REVIEW_SITUATIONS = {
+    'duplicate_approval': 'ya estaba pagado con otra transacción',
+    'order_not_awaiting_payment': 'ya no esperaba pago',
+}
+
 
 def _can_send_automated_email(order: Order) -> bool:
     if order.last_automated_email_at is None:
@@ -249,6 +254,46 @@ class NotificationService:
             return True
         except Exception as exc:
             logger.error('Error sending admin notification: %s', exc)
+            return False
+
+    @staticmethod
+    def notify_payment_review(order: Order, reference: str, provider_id: str, reason: str) -> bool:
+        """Tell staff about an approved charge that the order could not absorb."""
+        admin_email = getattr(settings, 'ADMIN_EMAIL', '')
+        if not admin_email:
+            return False
+        situation = PAYMENT_REVIEW_SITUATIONS.get(reason, 'requiere revisión manual')
+        subject = f'Revisar pago Wompi — {order.order_number}'
+        body = (
+            f'Wompi aprobó la transacción {provider_id} (referencia {reference}) del pedido '
+            f'{order.order_number}, que {situation}.\n\n'
+            f'Estado actual del pedido: {order.get_status_display()}. No se modificó el pedido.\n'
+            f'Revisa el cobro en el panel de Wompi y decide si corresponde reembolsarlo '
+            f'o reactivar el pedido.'
+        )
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        html = render_email_html(
+            heading=f'Revisar pago — {order.order_number}',
+            paragraphs=[
+                f'Wompi aprobó un cobro del pedido {order.order_number}, que {situation}.',
+                'No se modificó el pedido. Revisa el cobro en el panel de Wompi y decide '
+                'si corresponde reembolsarlo o reactivar el pedido.',
+            ],
+            details=[
+                {'label': 'Pedido', 'value': order.order_number},
+                {'label': 'Estado del pedido', 'value': order.get_status_display()},
+                {'label': 'Referencia', 'value': reference},
+                {'label': 'Transacción Wompi', 'value': provider_id},
+            ],
+            cta={'text': 'Abrir panel', 'url': f'{frontend_url}/backoffice/pedidos'},
+            preheader=f'Cobro aprobado del pedido {order.order_number} pendiente de revisión.',
+            subject=subject,
+        )
+        try:
+            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [admin_email], html_message=html)
+            return True
+        except Exception as exc:
+            logger.warning('payment review email delivery failed (error_type=%s)', type(exc).__name__)
             return False
 
     @staticmethod

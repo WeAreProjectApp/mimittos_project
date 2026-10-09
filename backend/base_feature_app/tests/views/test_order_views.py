@@ -1,5 +1,6 @@
 """Test order API behavior."""
 
+import logging
 from datetime import datetime, timedelta
 from datetime import timezone as datetime_timezone
 from unittest.mock import patch
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection
+from django.db import OperationalError, connection
 from django.test.utils import CaptureQueriesContext
 from django_attachments.models import Library
 from freezegun import freeze_time
@@ -393,6 +394,61 @@ def test_create_order_reports_a_media_removed_after_validation(
     assert Order.objects.count() == 0
     assert OrderItem.objects.count() == 0
     assert WompiTransaction.objects.count() == 0
+
+
+def _refuse_order_insert(execute, sql, params, many, context):
+    """Simulate the database refusing the order row (lock timeout, lost connection, schema drift)."""
+    if sql.startswith(f'INSERT INTO {connection.ops.quote_name(Order._meta.db_table)} '):
+        raise OperationalError(1205, 'Lock wait timeout exceeded; try restarting transaction')
+    return execute(sql, params, many, context)
+
+
+@pytest.mark.django_db
+def test_create_order_reports_a_database_failure_as_server_error(anon_client, order_data):
+    """Falla si un fallo interno del checkout vuelve a responderse como 400 con texto de la base."""
+    anon_client.raise_request_exception = False
+
+    with connection.execute_wrapper(_refuse_order_insert):
+        response = anon_client.post('/api/orders/', order_data, format='json')
+
+    assert response.status_code == 500
+    assert b'Lock wait timeout' not in response.content
+    assert Order.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_create_order_logs_a_database_failure_with_its_traceback(anon_client, order_data, caplog):
+    """Falla si un fallo interno del checkout deja de registrarse como ERROR con su traza."""
+    anon_client.raise_request_exception = False
+
+    with connection.execute_wrapper(_refuse_order_insert):
+        anon_client.post('/api/orders/', order_data, format='json')
+
+    assert ('django.request', logging.ERROR, 'Internal Server Error: /api/orders/') in caplog.record_tuples
+    assert 'OperationalError: (1205' in caplog.text
+
+
+@pytest.mark.django_db
+def test_create_order_rejects_a_size_withdrawn_after_validation(anon_client, order_data, peluch_with_price, size):
+    """Falla si una talla retirada durante el checkout expone texto interno o crea el pedido."""
+    table = connection.ops.quote_name(PeluchSizePrice._meta.db_table)
+    withdrawn = False
+
+    def withdraw_after_validation(execute, sql, params, many, context):
+        nonlocal withdrawn
+        result = execute(sql, params, many, context)
+        if not withdrawn and f'FROM {table}' in sql:
+            withdrawn = True
+            PeluchSizePrice.objects.filter(peluch=peluch_with_price, size=size).update(is_available=False)
+        return result
+
+    with connection.execute_wrapper(withdraw_after_validation):
+        response = anon_client.post('/api/orders/', order_data, format='json')
+
+    assert withdrawn is True
+    assert response.status_code == 400
+    assert response.data == {'detail': 'Este tamaño ya no está disponible para este peluche. Actualiza tu carrito.'}
+    assert Order.objects.count() == 0
 
 
 @pytest.mark.django_db
