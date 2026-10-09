@@ -29,6 +29,7 @@ const mockUseCartStore = useCartStore as unknown as jest.Mock
 const mockOrderService = orderService as jest.Mocked<typeof orderService>
 const mockUseRouter = useRouter as unknown as jest.Mock
 const futureExpiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+const AUDIO_RETRY_MESSAGE = 'Vuelve a subir el audio de este peluche para completar tu pedido.'
 
 const peluchItem = {
   peluch_id: 1, peluch_slug: 'osito-coral', title: 'Osito Coral',
@@ -188,7 +189,13 @@ describe('CheckoutPage', () => {
     jest.restoreAllMocks()
   })
 
-  it('preserves cart state for indexed media recovery', async () => {
+  // DRF 3.18 sends {"items": {"1": {...}}} with only the invalid lines; the array shape is the older format.
+  const mediaErrorBodies = [
+    { shape: 'the indexed object sent by the API', items: { 1: { audio_media_id: [AUDIO_RETRY_MESSAGE] } } },
+    { shape: 'a per-line array', items: [{}, { audio_media_token: [AUDIO_RETRY_MESSAGE] }] },
+  ]
+
+  it.each(mediaErrorBodies)('attaches media recovery to the failed line from $shape', async ({ items }) => {
     // Fails if an indexed error is attached to the first cart line instead of its failed variant.
     const clearCart = jest.fn()
     const unaffectedItem = { ...peluchItem, quantity: 1 }
@@ -197,7 +204,7 @@ describe('CheckoutPage', () => {
       size_id: 5, size_label: 'Grande', color_id: 7, color_name: 'Lila', quantity: 2,
     }
     setCartState({ items: [unaffectedItem, failedItem], clearCart })
-    mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items: [{}, { audio_media_token: ['Vuelve a cargar tu audio.'] }] } } })
+    mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items } } })
     jest.spyOn(HTMLFormElement.prototype, 'checkValidity').mockReturnValue(true)
     jest.spyOn(HTMLFormElement.prototype, 'reportValidity').mockReturnValue(true)
 
@@ -211,7 +218,7 @@ describe('CheckoutPage', () => {
     expect(await screen.findByText('Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.')).toBeInTheDocument()
     const recoveryLink = screen.getByRole('link', { name: 'Volver a personalizar Conejo Lila' })
     expect(recoveryLink).toHaveAttribute('href', '/peluches/conejo-lila?cartItem=2-5-7')
-    expect(recoveryLink.parentElement).toHaveTextContent('Vuelve a cargar tu audio.')
+    expect(recoveryLink.parentElement).toHaveTextContent(AUDIO_RETRY_MESSAGE)
     expect(screen.queryByRole('link', { name: 'Volver a personalizar Osito Coral' })).not.toBeInTheDocument()
     expect(mockOrderService.createOrder).toHaveBeenCalledWith(expect.objectContaining({ items: [
       expect.objectContaining({ peluch_id: 1, size_id: 2, color_id: 1, quantity: 1 }),

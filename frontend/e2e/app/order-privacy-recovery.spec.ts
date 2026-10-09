@@ -6,6 +6,8 @@ const ORDER = 'ORD-1'
 const EMAIL = 'ana@example.com'
 const ACCESS_TOKEN = 'access-token-1'
 const accessExpiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+// POST /api/orders/ rejects only the second cart line, keyed by index as DRF 3.18 sends it.
+const SECOND_LINE_MEDIA_ERROR = JSON.stringify({ items: { 1: { huella_media_id: ['Vuelve a subir la imagen de huella de este peluche para completar tu pedido.'] } } })
 
 const paymentInfo = {
   order_number: ORDER,
@@ -113,7 +115,7 @@ test('recovers the second personalization without replacing sibling lines @flow:
   await page.route('**/api/orders/', (route) => {
     if (route.request().method() !== 'POST') return route.continue()
     createAttempt += 1
-    if (createAttempt === 1) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ items: [{}, { huella_media_token: ['Vuelve a subir la imagen para continuar.'] }] }) })
+    if (createAttempt === 1) return route.fulfill({ status: 400, contentType: 'application/json', body: SECOND_LINE_MEDIA_ERROR })
     return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ order_number: 'RECOVERED-1', amount_paid_now: 50000, is_guest: true, order_access_token: ACCESS_TOKEN, expires_at: accessExpiry() }) })
   })
   await page.goto('/checkout')
@@ -161,7 +163,7 @@ test('keeps both lines recoverable after a media upload failure @flow:checkout-p
   await page.route('**/api/peluches/conejo-prueba/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(peluch) }))
   await page.route('**/api/peluches/conejo-prueba/reviews/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
   await page.route('**/api/orders/', (route) => route.request().method() === 'POST'
-    ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ items: [{}, { huella_media_token: ['Vuelve a subir la imagen para continuar.'] }] }) })
+    ? route.fulfill({ status: 400, contentType: 'application/json', body: SECOND_LINE_MEDIA_ERROR })
     : route.continue())
   await page.goto('/checkout')
   await page.getByText('Nombre completo').locator('..').getByRole('textbox').fill('Ana')
