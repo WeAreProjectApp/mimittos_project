@@ -5,6 +5,25 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal r3 — 2026-10-09
+
+Entregado en PRs por frente (seguridad, rendimiento, observabilidad,
+mantenibilidad, responsividad, QA y compartido), integrados con merge-queue.
+
+Pendiente de decisión o de otra ronda:
+- Montos de pago completo: definir qué es "Abono"/"Ingresos" y corregir correos, Mis pedidos, KPIs, CSV y la página de pago.
+- Contrato PSE/Bancolombia: el polling dentro del request puede superar el timeout de 30 s de gunicorn.
+- Resultado incierto del cobro: un timeout responde 502 "intenta de nuevo" aunque la transacción pudo crearse.
+- Aprobación tardía sobre un pedido cancelado: reembolsar o reactivar (hoy sólo se alerta).
+- Cooldown de 24 h de correos de estado: hoy descarta, no posterga.
+- Staff frente a superusuario en la gestión de usuarios.
+- Checkout de invitado con el correo de una cuenta registrada.
+- `has_corazon` sin validar contra el peluche; huella de texto vacía se acepta y se cobra.
+- Medios ya guardados con nombre predecible (sin renombrar).
+- Dos subidas simultáneas en el peor caso de imagen: limitar la frecuencia de subidas anónimas.
+- Extender 16 px al resto de formularios; menú móvil del Header (Escape, foco, cruce de breakpoint).
+- El gate de CI no instala ruff; PyJWT 2.13 con advisory aplicable de bajo impacto (GHSA-8wjv-2p76-3863).
+
 ## Ronda transversal por frentes — 2026-10-08
 
 - Seguridad: privacidad de reseñas, autorización staff de ventas y protección

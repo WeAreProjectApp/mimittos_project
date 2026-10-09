@@ -5,7 +5,7 @@ description: Arquitectura de Mimittos verificada contra rutas, imports, modelos 
 
 # Arquitectura — Mimittos
 
-Revisión: 2026-10-08.
+Revisión: 2026-10-09.
 
 ## Integridad y orden de bloqueos
 
@@ -241,6 +241,39 @@ El fallo de la notificación no deshace el pago ni duplica su confirmación.
 La navegación administrativa usa drawer por debajo de 1024 px y sidebar
 fijo desde ese ancho. CI añade MySQL 8 aislado para las pruebas de bloqueos
 de fila: diez escenarios, doce casos y rechazo de ejecuciones omitidas.
+
+## Contratos de la ronda r3 — 2026-10-09
+
+Pagos: `POST /api/payment/process/` sólo cobra pedidos en `pending_payment`;
+un pedido cancelado o ya avanzado responde 409 antes de llamar a Wompi. Una
+aprobación que el pedido no puede recibir (una segunda transacción aprobada
+para una referencia ya pagada, o la aprobación de un pedido que ya no espera
+pago) no cambia estados: registra un ERROR con identificadores del proveedor,
+sin datos del comprador, y avisa a `ADMIN_EMAIL` después del commit con el
+asunto "Revisar pago Wompi". Una aprobación repetida con el mismo id no avisa.
+
+Checkout: `POST /api/orders/` responde 400 sólo por reglas de negocio (medio
+retirado, talla que dejó de venderse); cualquier otro fallo se propaga como
+500 con traza. Los errores por línea siguen la forma de DRF 3.18, un objeto
+indexado sólo con las líneas inválidas (`{"items": {"1": {...}}}`), y el
+frontend lo asigna a cada línea del carrito.
+
+Medios de personalización (`POST /api/media/upload/`, público): la vista
+rechaza archivos por encima de `MAX_UPLOAD_IMAGE_MB` (15 por defecto, igual
+que nginx) o `MAX_UPLOAD_AUDIO_MB` antes de procesarlos, y guarda cada archivo
+con un nombre aleatorio (`uuid4`). El servicio valida píxeles desde la cabecera
+antes de decodificar: JPEG/MPO se decodifica con `draft` y admite hasta 24 MP;
+los demás formatos, hasta 4K (3840×2160). El audio se decodifica como máximo
+30 s y los `.opus` se leen como Ogg.
+
+Sesiones JWT: el refresh no rota (`ROTATE_REFRESH_TOKENS=False`) y los tokens
+llevan el hash de la contraseña (`CHECK_REVOKE_TOKEN=True`). Cambiar la
+contraseña invalida el access y el refresh anteriores; el refresh de una
+cuenta borrada responde 401. Desplegar este cambio exige un único nuevo
+inicio de sesión a todos los usuarios.
+
+Formularios de compra: los campos de texto de checkout, pago y personalización
+usan 16 px o más, para que iOS no haga zoom (RESPONSIVE_STANDARDS FORM-3).
 
 ## Lecturas y carga de gráficos — 2026-09-30
 

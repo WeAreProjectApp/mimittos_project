@@ -5,6 +5,25 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Ronda transversal r3 — 2026-10-09
+
+La ronda `improvement-09102026-r3` diagnosticó seis frentes sobre `origin/main`
+`a7629e9` y aplicó sólo lo que superó el umbral (impacto ALTO, o MEDIO con
+esfuerzo y riesgo BAJO), con una rama por frente y un dueño por archivo.
+
+Seguridad acota la subida pública de medios, la guarda con nombres aleatorios
+y revoca las sesiones JWT al cambiar la contraseña (re-login único aceptado por
+el operador). Rendimiento acota la decodificación de audio a 30 s y de imágenes
+por píxeles, y acepta notas de voz `.opus`. Observabilidad impide cobrar pedidos
+que ya no esperan pago, alerta aprobaciones que el pedido no puede recibir y
+separa los 400 de negocio de los 500 internos del checkout. Mantenibilidad hace
+que checkout entienda los errores por línea de DRF 3.18. Responsividad lleva a
+16 px los campos de compra. QA prueba el cobro y guardado de la personalización,
+reescribe dos E2E sin aserción efectiva y cubre el pago rechazado.
+
+Decisiones: montos de pago completo (correos, Mis pedidos, KPIs y CSV muestran
+el abono) pospuestos por el operador; ciclo de vida del menú móvil diferido.
+
 ## Ronda transversal por frentes — 2026-10-08
 
 La ronda `improvement-20261008-orchestrated-r2` trabaja en ramas y worktrees
