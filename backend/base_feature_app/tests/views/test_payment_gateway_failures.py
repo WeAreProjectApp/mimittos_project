@@ -279,6 +279,7 @@ def test_process_payment_refuses_an_order_no_longer_awaiting_payment(
 ):
     """Catches: charging an order that an approval can no longer confirm (e.g. cancelled on decline)."""
     Order.objects.filter(pk=wompi_tx.order_id).update(status=order_status)
+    mock_process.return_value = {'status': 'APPROVED', 'redirect_url': '', 'wompi_id': 'late-id', 'status_message': ''}
 
     response = api_client.post(
         _PROCESS_URL, _bancolombia_payload(wompi_tx.order.order_number), format='json'
