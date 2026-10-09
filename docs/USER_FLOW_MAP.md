@@ -4,8 +4,8 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.6
-**Last Updated:** 2026-10-08
+**Version:** 1.5.7
+**Last Updated:** 2026-10-09
 
 ---
 
@@ -684,6 +684,7 @@ The per-product huella cost is retained.
 1. Corazón section rendered with `corazon_extra_cost` shown.
 2. User enters a phrase (max 50 characters).
 3. `personalization_cost` increases by `corazon_extra_cost`.
+4. On add to cart and checkout, the phrase is sent as `corazon_phrase` in the order item payload.
 
 ---
 
