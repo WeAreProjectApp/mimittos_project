@@ -531,10 +531,17 @@ def test_payment_status_hides_nonexistent_reference_without_capability(api_clien
 # POST /api/payment/process/ — PSE persona jurídica requiere NIT
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def payable_tx(wompi_tx):
+    """Only an order still awaiting payment reaches the method validation."""
+    Order.objects.filter(pk=wompi_tx.order_id).update(status=Order.Status.PENDING_PAYMENT)
+    return wompi_tx
+
+
 @pytest.mark.django_db
-def test_process_payment_pse_rejects_legal_entity_without_nit(api_client, wompi_tx):
+def test_process_payment_pse_rejects_legal_entity_without_nit(api_client, payable_tx):
     response = api_client.post('/api/payment/process/', {
-        'order_number': wompi_tx.order.order_number,
+        'order_number': payable_tx.order.order_number,
         'method': 'PSE',
         'bank_code': '1007',
         'user_type': 1,
@@ -549,10 +556,10 @@ def test_process_payment_pse_rejects_legal_entity_without_nit(api_client, wompi_
 
 @pytest.mark.django_db
 @patch('base_feature_app.views.payment_views.WompiService.process_transaction')
-def test_process_payment_pse_accepts_legal_entity_with_nit(mock_process, api_client, wompi_tx):
+def test_process_payment_pse_accepts_legal_entity_with_nit(mock_process, api_client, payable_tx):
     mock_process.return_value = {'status': 'PENDING', 'redirect_url': '', 'wompi_id': 'x', 'status_message': ''}
     response = api_client.post('/api/payment/process/', {
-        'order_number': wompi_tx.order.order_number,
+        'order_number': payable_tx.order.order_number,
         'method': 'PSE',
         'bank_code': '1007',
         'user_type': 1,
