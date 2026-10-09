@@ -104,7 +104,6 @@ def test_optimize_image_converts_rgba_to_rgb(mock_image_module):
     rgba_img = MagicMock()
     rgba_img.mode = 'RGBA'
     rgba_img.size = (100, 100)
-    rgba_img.split.return_value = [None, None, None, MagicMock()]
     rgba_img.save = MagicMock(side_effect=lambda buf, **kw: buf.write(b'x' * 50))
 
     rgb_bg = MagicMock()
@@ -136,15 +135,15 @@ def test_optimize_image_scales_large_jpeg_photo_to_max_side(size, expected_size)
 
 
 def test_optimize_image_fills_transparent_png_area_with_white():
-    """A 9 MP RGBA PNG is reduced first and only then composited on a white background."""
-    png = _half_transparent_png_bytes(3000, 3000)
+    """An RGBA PNG right at the 4K limit is composited on white, then reduced."""
+    png = _half_transparent_png_bytes(3840, 2160)
     upload = SimpleUploadedFile('huella.png', png, content_type='image/png')
 
     result = Image.open(MediaOptimizationService.optimize_image(upload))
 
-    assert result.size == (1200, 1200)
-    assert result.getpixel((150, 600)) == pytest.approx((255, 255, 255), abs=2)
-    assert result.getpixel((1050, 600)) == pytest.approx((200, 30, 30), abs=6)
+    assert result.size == (1200, 675)
+    assert result.getpixel((150, 300)) == pytest.approx((255, 255, 255), abs=2)
+    assert result.getpixel((1050, 300)) == pytest.approx((200, 30, 30), abs=6)
 
 
 # ---------------------------------------------------------------------------
@@ -172,16 +171,16 @@ def test_optimize_image_rejects_png_above_pixel_limit():
     assert 'demasiados píxeles' in str(exc_info.value)
 
 
-def test_optimize_image_rejects_twenty_megapixel_rgba_png_from_header():
-    """Formats without draft stop at 12 MP; with no pixel data only the header can decide."""
-    header_only_png = _png_bytes(5000, 4000, b'', bit_depth=8, color_type=6)
+def test_optimize_image_rejects_twelve_megapixel_rgba_png_from_header():
+    """Formats without draft stop at 4K; with no pixel data only the header can decide."""
+    header_only_png = _png_bytes(4032, 3024, b'', bit_depth=8, color_type=6)
     upload = SimpleUploadedFile('huella.png', header_only_png, content_type='image/png')
 
     with pytest.raises(ValidationError) as exc_info:
         MediaOptimizationService.optimize_image(upload)
 
     assert exc_info.value.messages == [
-        'La imagen tiene demasiados píxeles (5000x4000). Usa una imagen de máximo 12 megapíxeles.',
+        'La imagen tiene demasiados píxeles (4032x3024). Usa una imagen de máximo 4K (3840x2160).',
     ]
 
 

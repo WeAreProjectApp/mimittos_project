@@ -12,11 +12,13 @@ class MediaOptimizationService:
     # few-KB upload cannot expand to hundreds of MB inside a worker capped at
     # MemoryMax=250M. JPEG/MPO files are first scaled down with ``draft``: 24 MP
     # (a 6000x4000 photo) after draft. Other formats always decode at full size
-    # (an RGBA PNG peaks at ~9 bytes per pixel while it is reduced), so they get
-    # 12 MP, the 4032x3024 frame of a phone camera.
+    # (an RGBA PNG peaks at ~8 bytes per pixel while it is composited), so they
+    # stop at a 4K frame (3840x2160, ~8.3 MP): phone, tablet and 4K screenshots.
     IMAGE_DRAFT_FORMATS = ('JPEG', 'MPO')
     IMAGE_MAX_PIXELS = 24_000_000
-    IMAGE_MAX_PIXELS_WITHOUT_DRAFT = 4032 * 3024
+    IMAGE_MAX_PIXELS_LABEL = '24 megapíxeles'
+    IMAGE_MAX_PIXELS_WITHOUT_DRAFT = 3840 * 2160
+    IMAGE_MAX_PIXELS_WITHOUT_DRAFT_LABEL = '4K (3840x2160)'
 
     AUDIO_BITRATE = '64k'
     AUDIO_MAX_DURATION_SEC = 30
@@ -64,28 +66,27 @@ class MediaOptimizationService:
         img.draft('RGB', MediaOptimizationService.IMAGE_MAX_SIZE)
         if img.format in MediaOptimizationService.IMAGE_DRAFT_FORMATS:
             max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS
+            max_label = MediaOptimizationService.IMAGE_MAX_PIXELS_LABEL
         else:
             max_pixels = MediaOptimizationService.IMAGE_MAX_PIXELS_WITHOUT_DRAFT
+            max_label = MediaOptimizationService.IMAGE_MAX_PIXELS_WITHOUT_DRAFT_LABEL
         width, height = img.size
         if width * height > max_pixels:
             raise ValidationError(
                 f'La imagen tiene demasiados píxeles ({width}x{height}). '
-                f'Usa una imagen de máximo {max_pixels // 1_000_000} megapíxeles.'
+                f'Usa una imagen de máximo {max_label}.'
             )
 
-        # Palette and bilevel images only resample with NEAREST, so every mode other
-        # than RGB/RGBA is still converted first (bounded by the ceilings above).
         if img.mode not in ('RGB', 'RGBA'):
             img = img.convert('RGB')
-
-        # Reduce before compositing: the white background and the RGBA -> RGB step
-        # then work on at most IMAGE_MAX_SIZE pixels instead of the full image.
-        img.thumbnail(MediaOptimizationService.IMAGE_MAX_SIZE, Image.LANCZOS)
-
-        if img.mode == 'RGBA':
+        elif img.mode == 'RGBA':
+            # Composite at full size with the image itself as mask: no split() band
+            # copies, and no full-size premultiplied copy as resizing RGBA would need.
             bg = Image.new('RGB', img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[3])
+            bg.paste(img, mask=img)
             img = bg
+
+        img.thumbnail(MediaOptimizationService.IMAGE_MAX_SIZE, Image.LANCZOS)
 
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=MediaOptimizationService.IMAGE_QUALITY, optimize=True)
