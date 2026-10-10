@@ -68,6 +68,7 @@ def existing_order(db):
         department='Cundinamarca',
         total_amount=80000,
         deposit_amount=40000,
+        amount_paid_now=40000,
         balance_amount=40000,
         status=Order.Status.PENDING_PAYMENT,
     )
@@ -263,6 +264,35 @@ def test_process_event_stores_payment_method_type(wompi_tx):
     WompiService.process_event(event_data)
     wompi_tx.refresh_from_db()
     assert wompi_tx.payment_method_type == 'NEQUI'
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+@pytest.mark.parametrize(('payment_mode', 'amount', 'balance'), [
+    (Order.PaymentMode.FULL, 80000, 0),
+    (Order.PaymentMode.DEPOSIT, 40000, 40000),
+])
+def test_pending_event_sends_no_payment_confirmation(
+    wompi_tx, mailoutbox, django_capture_on_commit_callbacks, payment_mode, amount, balance,
+):
+    """Fail if a planned payment amount starts confirmation before approval."""
+    order = wompi_tx.order
+    order.payment_mode = payment_mode
+    order.amount_paid_now = amount
+    order.balance_amount = balance
+    order.save(update_fields=['payment_mode', 'amount_paid_now', 'balance_amount'])
+    wompi_tx.amount_in_cents = amount * 100
+    wompi_tx.save(update_fields=['amount_in_cents'])
+    event = _make_event_data('test', status='PENDING', amount=amount * 100, reference=wompi_tx.reference)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        WompiService.process_event(event)
+
+    order.refresh_from_db()
+    assert mailoutbox == []
+    assert order.status == Order.Status.PENDING_PAYMENT
+    assert not order.status_history.exists()
+    assert order.last_automated_email_at is None
 
 
 @pytest.mark.django_db
