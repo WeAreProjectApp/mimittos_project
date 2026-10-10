@@ -4,6 +4,9 @@ import path from 'node:path';
 import type { APIRequestContext, BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '../test-with-coverage';
 
+// Query/fragment credentials are never captured in traces, screenshots or videos.
+test.use({ trace: 'off', screenshot: 'off', video: 'off' });
+
 const PASSWORD = 'R3SyntheticFixture123!';
 const BRIDGE_ERROR = 'El enlace de acceso no es válido o ha expirado.';
 const TAGS = ['@flow:admin-login-handoff', '@module:auth', '@priority:P1'];
@@ -151,9 +154,6 @@ async function expectPrivateBuyerOrder(request: APIRequestContext, order: string
 }
 
 test.describe('Admin signed handoff — real ownership chain', () => {
-  // Query/fragment credentials are never captured in traces, screenshots or videos.
-  test.use({ trace: 'off', screenshot: 'off', video: 'off' });
-
   test.beforeAll(async ({ baseURL, request }) => {
     if (!baseURL) throw new Error('A scratch browser baseURL is required.');
     const runtime = scratchRuntime(baseURL);
