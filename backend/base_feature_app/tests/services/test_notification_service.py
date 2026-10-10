@@ -82,11 +82,21 @@ def test_guest_confirmation_text_links_to_sign_up(base_order, mailoutbox):
 
 @pytest.mark.django_db
 @override_settings(FRONTEND_URL='https://store.example.test')
-def test_guest_confirmation_html_contains_sign_up_destination(base_order, mailoutbox):
+def test_guest_confirmation_html_links_to_sign_up(base_order, mailoutbox):
     NotificationService.notify_order_confirmation(base_order)
 
     html = mailoutbox[0].alternatives[0].content
-    assert 'https://store.example.test/sign-up' in html
+    assert re.search(r'<a href="https://store\.example\.test/sign-up"[^>]*>Créala aquí</a>', html)
+
+
+@pytest.mark.django_db
+@override_settings(FRONTEND_URL='https://store.example.test/?origin="><img src=x onerror=alert(1)>')
+def test_guest_confirmation_html_escapes_registration_href(base_order, mailoutbox):
+    NotificationService.notify_order_confirmation(base_order)
+
+    html = mailoutbox[0].alternatives[0].content
+    assert 'href="https://store.example.test/?origin=&quot;&gt;&lt;img src=x onerror=alert(1)&gt;/sign-up"' in html
+    assert '<img src=x' not in html
 
 
 @pytest.mark.django_db
