@@ -1,6 +1,6 @@
 asgiref==3.12.1
 # Production uses MySQL 8.0.x; Django 6.1 requires MySQL 8.4+.
-Django==6.0.8
+Django==6.0.9
 django-cleanup==9.0.0
 django-cors-headers==4.9.0
 django-dbbackup>=4.0.0
