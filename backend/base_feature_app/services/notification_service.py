@@ -55,7 +55,7 @@ class NotificationService:
 
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
         tracking_url = OrderAccessService.tracking_url(order)
-        register_url = f'{frontend_url}/auth/register'
+        register_url = f'{frontend_url}/sign-up'
         payment_label, payment_amount = _payment_summary(order, deposit_label='Abono pagado')
 
         subject = f'¡Tu pedido {order.order_number} está confirmado! 🧸'
