@@ -13,6 +13,7 @@ from rest_framework import status
 
 from base_feature_app.models import PasswordCode
 from base_feature_app.models.password_code import PasswordCodeAttemptBudget
+from base_feature_app.tests.factories import OrderFactory
 from base_feature_app.tests.views.test_account_code_limits import _parallel_posts
 from base_feature_app.views import auth as auth_views
 
@@ -73,6 +74,118 @@ def test_sign_up_creates_user(mock_captcha, api_client):
 
 
 @pytest.mark.django_db
+@patch('base_feature_app.views.auth.verify_recaptcha', return_value=True)
+def test_registration_replaces_preregistered_credential(mock_captcha, api_client):
+    """Email ownership must not activate a credential chosen by a third party."""
+    email = 'preregistered@example.com'
+    guest_order = OrderFactory(customer=None, customer_email=email)
+    with freeze_time(timezone.now() - timedelta(seconds=61)):
+        first = api_client.post(reverse('sign_up'), {
+            'email': email, 'password': 'AttackerPassword123!',
+        }, format='json')
+    user = get_user_model().objects.get(email=email)
+    original_password = user.password
+    repeated = api_client.post(reverse('sign_up'), {
+        'email': email, 'password': 'OwnerPassword123!',
+    }, format='json')
+    user.refresh_from_db()
+    preserved_password = user.password
+    code = PasswordCode.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False)
+    verification = api_client.post(reverse('verify_registration'), {
+        'email': email, 'code': code.code, 'new_password': 'OwnerPassword123!',
+    }, format='json')
+    rejected_login = api_client.post(reverse('sign_in'), {
+        'email': email, 'password': 'AttackerPassword123!',
+    }, format='json')
+    accepted_login = api_client.post(reverse('sign_in'), {
+        'email': email, 'password': 'OwnerPassword123!',
+    }, format='json')
+
+    assert first.status_code == status.HTTP_201_CREATED
+    assert repeated.status_code == status.HTTP_200_OK
+    assert preserved_password == original_password
+    assert verification.status_code == status.HTTP_200_OK
+    assert rejected_login.status_code == status.HTTP_401_UNAUTHORIZED
+    assert accepted_login.status_code == status.HTTP_200_OK
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {verification.json()['access']}")
+    orders = api_client.get(reverse('my-orders'))
+    assert orders.status_code == status.HTTP_200_OK
+    assert [order['order_number'] for order in orders.json()] == [guest_order.order_number]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('password_fields', [
+    pytest.param({}, id='legacy-contract'),
+    pytest.param({'new_password': ''}, id='empty'),
+    pytest.param({'new_password': 'short'}, id='too-short'),
+    pytest.param({'new_password': None}, id='null'),
+    pytest.param({'new_password': True}, id='boolean'),
+    pytest.param({'new_password': 12345678}, id='number'),
+    pytest.param({'new_password': ['OwnerPassword123!']}, id='array'),
+    pytest.param({'new_password': {'value': 'OwnerPassword123!'}}, id='object'),
+])
+def test_registration_rejects_invalid_password_without_consuming_code(api_client, password_fields):
+    """Verify invalid passwords preserve an available registration code."""
+    user = get_user_model().objects.create_user(
+        email='invalid-verification@example.com', password='Initial123!', email_verified=False,
+    )
+    original_password = user.password
+    code = PasswordCode.objects.create(user=user, code='444444', purpose=PasswordCode.Purpose.REGISTRATION)
+    guest_order = OrderFactory(customer=None, customer_email=user.email)
+
+    response = api_client.post(reverse('verify_registration'), {
+        'email': user.email, 'code': code.code, **password_fields,
+    }, format='json')
+
+    user.refresh_from_db()
+    code.refresh_from_db()
+    guest_order.refresh_from_db()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert 'access' not in response.json()
+    assert user.password == original_password
+    assert user.email_verified is False
+    assert code.is_valid() is True
+    assert guest_order.customer_id is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('account_state', 'code_state', 'age_minutes', 'submitted_code'), [
+    pytest.param({}, {}, 0, '000000', id='incorrect'),
+    pytest.param({}, {}, 16, '444444', id='expired'),
+    pytest.param({}, {'used': True}, 0, '444444', id='used'),
+    pytest.param({}, {'purpose': PasswordCode.Purpose.PASSWORD_RESET}, 0, '444444', id='reset-purpose'),
+    pytest.param({'is_active': False}, {}, 0, '444444', id='staff-blocked'),
+    pytest.param({'email_verified': True}, {}, 0, '444444', id='already-verified'),
+])
+def test_registration_rejection_preserves_credentials(api_client, account_state, code_state,
+                                                     age_minutes, submitted_code):
+    """Verify rejected registration leaves existing credentials unchanged."""
+    user_fields = {'email_verified': False, **account_state}
+    user = get_user_model().objects.create_user(
+        email='rejected-verification@example.com', password='Initial123!', **user_fields,
+    )
+    original_state = (user.password, user.email_verified, user.is_active)
+    code_fields = {'purpose': PasswordCode.Purpose.REGISTRATION, **code_state}
+    code = PasswordCode.objects.create(user=user, code='444444', **code_fields)
+    PasswordCode.objects.filter(pk=code.pk).update(created_at=timezone.now() - timedelta(minutes=age_minutes))
+    original_used = code.used
+    guest_order = OrderFactory(customer=None, customer_email=user.email)
+
+    response = api_client.post(reverse('verify_registration'), {
+        'email': user.email, 'code': submitted_code, 'new_password': 'OwnerPassword123!',
+    }, format='json')
+
+    user.refresh_from_db()
+    code.refresh_from_db()
+    guest_order.refresh_from_db()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert 'access' not in response.json()
+    assert (user.password, user.email_verified, user.is_active) == original_state
+    assert code.used == original_used
+    assert guest_order.customer_id is None
+
+
+@pytest.mark.django_db
 def test_verify_registration_consumes_registration_code(api_client):
     """Falla si un código de registro válido no verifica la cuenta ni se consume."""
     User = get_user_model()
@@ -84,7 +197,7 @@ def test_verify_registration_consumes_registration_code(api_client):
     )
 
     response = api_client.post(
-        reverse('verify_registration'), {'email': user.email, 'code': password_code.code}, format='json',
+        reverse('verify_registration'), {'email': user.email, 'code': password_code.code, 'new_password': 'OwnerPassword123!'}, format='json',
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -92,6 +205,7 @@ def test_verify_registration_consumes_registration_code(api_client):
     user.refresh_from_db()
     password_code.refresh_from_db()
     assert user.email_verified is True
+    assert user.check_password('OwnerPassword123!') is True
     assert password_code.used is True
 
 
@@ -105,14 +219,17 @@ def test_verify_registration_rejects_used_code(api_client):
     PasswordCode.objects.create(
         user=user, code='555555', purpose=PasswordCode.Purpose.REGISTRATION,
     )
-    payload = {'email': user.email, 'code': '555555'}
+    payload = {'email': user.email, 'code': '555555', 'new_password': 'OwnerPassword123!'}
 
     api_client.post(reverse('verify_registration'), payload, format='json')
+    payload['new_password'] = 'SecondPassword123!'
     response = api_client.post(reverse('verify_registration'), payload, format='json')
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert 'access' not in response.json()
     assert 'refresh' not in response.json()
+    user.refresh_from_db()
+    assert user.check_password('OwnerPassword123!') is True
 
 
 @pytest.mark.django_db
@@ -353,7 +470,7 @@ def test_verify_registration_rejects_password_reset_code(api_client):
     )
 
     response = api_client.post(
-        reverse('verify_registration'), {'email': user.email, 'code': '666666'}, format='json',
+        reverse('verify_registration'), {'email': user.email, 'code': '666666', 'new_password': 'OwnerPassword123!'}, format='json',
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -374,7 +491,7 @@ def test_verify_registration_keeps_blocked_account_blocked(api_client):
     )
 
     response = api_client.post(
-        reverse('verify_registration'), {'email': user.email, 'code': password_code.code}, format='json',
+        reverse('verify_registration'), {'email': user.email, 'code': password_code.code, 'new_password': 'OwnerPassword123!'}, format='json',
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -583,7 +700,7 @@ def test_verify_registration_consumes_code_once_under_mysql_locking(record_tests
         user=user, code='888888', purpose=PasswordCode.Purpose.REGISTRATION,
     )
     results, lock_wait = _parallel_posts('verify_registration', {
-        'email': user.email, 'code': '888888',
+        'email': user.email, 'code': '888888', 'new_password': 'OwnerPassword123!',
     })
 
     assert len({connection_id for connection_id, _ in results}) == 2

@@ -34,9 +34,12 @@ test('verifying a registration code sends the customer to their orders',
       route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ email: 'nueva@ejemplo.com' }) })
     );
 
-    // Mock email verification — accepts any code
-    await page.route('**/api/verify_registration/', (route) =>
-      route.fulfill({
+    // The verification request must carry the credential chosen by the email owner.
+    await page.route('**/api/verify_registration/', async (route) => {
+      expect(route.request().postDataJSON()).toMatchObject({
+        email: 'nueva@ejemplo.com', code: '123456', new_password: 'Segura@123',
+      });
+      await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
@@ -44,8 +47,8 @@ test('verifying a registration code sends the customer to their orders',
           refresh: 'fake-refresh',
           user: { id: 11, email: 'nueva@ejemplo.com', first_name: 'María', last_name: 'Rodríguez', role: 'customer', is_staff: false },
         }),
-      })
-    );
+      });
+    });
     await page.route('**/api/validate_token/**', (route) =>
       route.fulfill({
         status: 200,

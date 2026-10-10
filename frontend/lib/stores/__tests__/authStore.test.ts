@@ -454,7 +454,7 @@ describe('authStore', () => {
       mockGetAccessToken.mockReturnValue('verified-access');
       mockGetRefreshToken.mockReturnValue('verified-refresh');
       await act(async () => {
-        await useAuthStore.getState().verifyRegistration({ email: verifiedUser.email, code: '123456' });
+        await useAuthStore.getState().verifyRegistration({ email: verifiedUser.email, code: '123456', new_password: 'OwnerPassword123!' });
       });
 
       await act(async () => {
@@ -467,6 +467,9 @@ describe('authStore', () => {
         refreshToken: 'verified-refresh',
         user: verifiedUser,
         isAuthenticated: true,
+      });
+      expect(mockApi.post).toHaveBeenCalledWith('verify_registration/', {
+        email: verifiedUser.email, code: '123456', new_password: 'OwnerPassword123!',
       });
     });
 

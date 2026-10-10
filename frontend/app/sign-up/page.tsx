@@ -114,7 +114,9 @@ function SignUpContent() {
     setLoading(true)
     setError('')
     try {
-      await verifyRegistration({ email: pendingEmail, code })
+      await verifyRegistration({ email: pendingEmail, code, new_password: password })
+      setPassword('')
+      setConfirmPassword('')
       router.replace('/orders')
     } catch (err: any) {
       setError(err.response?.data?.error || 'Código inválido o expirado')
