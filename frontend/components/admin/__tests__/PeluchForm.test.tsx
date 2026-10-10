@@ -194,9 +194,11 @@ describe('PeluchForm', () => {
   })
 
   it('retains the unconfirmed draft after retry returns 404', async () => {
+    let rejectRetry!: (error: { response: { status: number } }) => void
+    const retryDelete = new Promise<never>((_resolve, reject) => { rejectRetry = reject })
     ;(peluchAdminService.delete as jest.Mock)
       .mockRejectedValueOnce(new Error('Network Error'))
-      .mockRejectedValueOnce({ response: { status: 404 } })
+      .mockReturnValueOnce(retryDelete)
     const push = await renderUploadedDraft()
     jest.spyOn(window, 'confirm').mockReturnValue(true)
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
@@ -204,6 +206,13 @@ describe('PeluchForm', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
+    expect(peluchAdminService.delete).toHaveBeenCalledTimes(2)
+    expect(peluchAdminService.delete).toHaveBeenNthCalledWith(2, 'osito-coral')
+    expect(screen.queryByText(draftDeletionError)).not.toBeInTheDocument()
+    await act(async () => {
+      rejectRetry({ response: { status: 404 } })
+      await retryDelete.catch(() => {})
+    })
     await screen.findByText(draftDeletionError)
     expect(screen.getByText(draftDeletionError)).toHaveTextContent(draftDeletionError)
     expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
