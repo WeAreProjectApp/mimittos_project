@@ -1,10 +1,11 @@
 """Wire contract of POST /api/orders/ per-line errors.
 
 frontend/app/checkout/page.tsx maps each key of ``items`` to the cart line that
-must be personalized again, so the JSON shape is part of the API contract.
+needs correction, so the JSON shape is part of the API contract.
 """
 import pytest
 
+from base_feature_app.models import Order
 from base_feature_app.tests.factories import (
     GlobalColorFactory,
     GlobalSizeFactory,
@@ -53,3 +54,26 @@ def test_create_order_keys_removed_media_error_by_failing_line_index(api_client)
 
     assert response.status_code == 400
     assert response.json() == {'items': {'1': {'huella_media_id': ['Imagen de huella no encontrada.']}}}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('field', 'invalid_value', 'message'), [
+    ('quantity', 11, 'Ensure this value is less than or equal to 10.'),
+    ('peluch_id', 999999, 'Peluche no encontrado.'),
+    ('size_id', 999999, 'Tamaño no válido.'),
+    ('color_id', 999999, 'Color no válido.'),
+])
+def test_create_order_keys_cart_validation_error_by_failing_line_index(api_client, field, invalid_value, message):
+    """A rejected cart line must expose its actionable error without creating an order."""
+    color = GlobalColorFactory()
+    size = GlobalSizeFactory()
+    peluch = PeluchFactory(colors=[color])
+    PeluchSizePriceFactory(peluch=peluch, size=size, price=80000)
+    valid_line = {'peluch_id': peluch.pk, 'size_id': size.pk, 'color_id': color.pk, 'quantity': 1}
+    lines = [valid_line, {**valid_line, field: invalid_value}]
+
+    response = api_client.post('/api/orders/', _order_payload(lines), format='json')
+
+    assert response.status_code == 400
+    assert response.json() == {'items': {'1': {field: [message]}}}
+    assert not Order.objects.exists()
