@@ -204,7 +204,9 @@ describe('PeluchForm', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
-    expect(await screen.findByText(draftDeletionError)).toBeVisible()
+    await screen.findByText(draftDeletionError)
+    expect(screen.getByText(draftDeletionError)).toHaveTextContent(draftDeletionError)
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
     expect(screen.getByTestId('peluch-color-photo-complete')).toBeVisible()
     expect(push).not.toHaveBeenCalled()
   })
@@ -216,7 +218,9 @@ describe('PeluchForm', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
-    expect(await screen.findByText(draftDeletionError)).toBeVisible()
+    await screen.findByText(draftDeletionError)
+    expect(screen.getByText(draftDeletionError)).toHaveTextContent(draftDeletionError)
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
     expect(push).not.toHaveBeenCalled()
   })
 
