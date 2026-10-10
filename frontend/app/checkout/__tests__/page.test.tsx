@@ -228,6 +228,65 @@ describe('CheckoutPage', () => {
     jest.restoreAllMocks()
   })
 
+  const cartValidationFields = [
+    { field: 'quantity', message: 'Ensure this value is less than or equal to 10.' },
+    { field: 'peluch_id', message: 'Peluche no encontrado.' },
+    { field: 'size_id', message: 'Este tamaño no está disponible para este peluche.' },
+    { field: 'color_id', message: 'Este color no está disponible para este peluche.' },
+  ]
+  const cartErrorBodies = cartValidationFields.flatMap(({ field, message }) => [
+    { field, shape: 'indexed object', message, items: { 1: { [field]: [message] } } },
+    { field, shape: 'legacy array', message, items: [{}, { [field]: [message] }] },
+  ])
+
+  it.each(cartErrorBodies)('shows the $field rejection from $shape on its cart line', async ({ message, items }) => {
+    // Catches non-media errors being discarded after a valid HTTP 400 response.
+    const clearCart = jest.fn()
+    const push = jest.fn()
+    mockUseRouter.mockReturnValue({ push })
+    const failedItem = { ...peluchItem, peluch_id: 2, title: 'Conejo Lila', quantity: 11 }
+    setCartState({ items: [peluchItem, failedItem], clearCart })
+    mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items } } })
+
+    render(<CheckoutPage />)
+    fireEvent.click(await screen.findByRole('checkbox'))
+    await act(async () => {
+      fireEvent.submit(screen.getByRole('button', { name: /Ir a pagar/i }).closest('form')!)
+    })
+
+    const recoveryLink = await screen.findByRole('link', { name: 'Revisar Conejo Lila en el carrito' })
+    expect(recoveryLink).toHaveAttribute('href', '/cart')
+    expect(recoveryLink.parentElement).toHaveTextContent(message)
+    expect(screen.queryByRole('link', { name: 'Revisar Osito Coral en el carrito' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Volver a personalizar/ })).not.toBeInTheDocument()
+    expect(mockOrderService.createOrder).toHaveBeenCalledWith(expect.objectContaining({ items: [peluchItem, failedItem] }))
+    expect(clearCart).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('keeps media recovery available for a line with a quantity rejection', async () => {
+    // Both corrections must remain reachable when DRF reports both types of error.
+    const clearCart = jest.fn()
+    const failedItem = { ...peluchItem, quantity: 11 }
+    setCartState({ items: [failedItem], clearCart })
+    mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items: { 0: {
+      quantity: ['Ensure this value is less than or equal to 10.'],
+      audio_media_id: [AUDIO_RETRY_MESSAGE],
+    } } } } })
+
+    render(<CheckoutPage />)
+    fireEvent.click(await screen.findByRole('checkbox'))
+    await act(async () => {
+      fireEvent.submit(screen.getByRole('button', { name: /Ir a pagar/i }).closest('form')!)
+    })
+
+    expect(await screen.findByRole('link', { name: 'Revisar Osito Coral en el carrito' })).toHaveAttribute('href', '/cart')
+    const mediaLink = screen.getByRole('link', { name: 'Volver a personalizar Osito Coral' })
+    expect(mediaLink).toHaveAttribute('href', '/peluches/osito-coral?cartItem=1-2-1')
+    expect(mediaLink.parentElement).toHaveTextContent(AUDIO_RETRY_MESSAGE)
+    expect(clearCart).not.toHaveBeenCalled()
+  })
+
   const checkoutFieldLabels = [
     'Nombre completo', 'Correo electrónico', 'Celular', 'Departamento',
     'Ciudad', 'Código postal', 'Dirección completa', 'Notas para el pedido (opcional)',
