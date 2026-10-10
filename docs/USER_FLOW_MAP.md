@@ -4,8 +4,97 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.7
-**Last Updated:** 2026-10-09
+**Version:** 1.5.8
+**Last Updated:** 2026-10-10
+
+
+## Revisión dirigida r2 — 2026-10-10
+
+La revisión de `e2e-user-flows-check` cubre registro ante fallo de correo
+y ciclo de borradores administrativos; el cierre incorpora únicamente el
+caso obligatorio de retroceso del navegador aprobado después del fallo CI. El registro JSON es la referencia
+para IDs/outcomes. Esta sección describe el contrato aprobado; la QA del SHA
+de aplicación sobre `160beb3bd70b1dd5b22c9a9b3d70def2464d1972` está
+**aprobada**: 65 backend, 18 unit y 19 E2E sin fallos/skips. La ejecución
+útil del caso de retroceso corregido y la aceptación del árbol final/CI
+siguen pendientes; no se extiende el veredicto a todo el mapa.
+
+### Roles y convenciones
+
+Invitado: registra su correo sin abrir sesión hasta verificarlo. Staff:
+crea, reabre, publica o descarta borradores. El cliente autenticado conserva
+las restricciones públicas: un borrador devuelve 404. Las pruebas usan tags
+`@flow` existentes y `@outcome` explícito; no se añaden IDs ni outcomes.
+APIClient prueba Django real con BD/medios aislados; Playwright prueba la UI
+real del SHA final con respuestas controladas en la frontera HTTP. Estas dos
+capas no equivalen a una integración navegador–Django.
+
+### Invitado — registro con correo pendiente
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Enviar formulario válido y confirmar envío | success | 201 para cuenta nueva o 200 para pendiente; aparece verificación, sin tokens. |
+| Enviar datos inválidos o repetir antes de un minuto | error | Error de validación o 429; conserva formulario y presupuesto. |
+| El transporte no confirma envío | failure | 503: «No pudimos confirmar el envío del código. Tu cuenta sigue pendiente de verificación. Espera al menos un minuto antes de volver a intentarlo.»; no afirma que envió el código. |
+| Consultar el formulario después de 503 | display | Datos conservados, error visible, botón disponible; el código de verificación no aparece. |
+
+Cuenta, código y presupuesto se conservan ante False; no se añade reintento
+SMTP automático. Pasado el límite vigente, el visitante puede repetir y
+avanzar a verificación si el envío se confirma. La verificación mantiene
+`new_password` elegida por el dueño del correo.
+
+### Staff — ciclo del borrador
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Primera foto, siguiente foto y guardar | success | Un único borrador inactivo; subidas posteriores y PATCH usan su slug; publica sólo según la casilla. |
+| Reabrir un borrador y guardar desmarcado | success | Detalle accesible a staff; casilla desmarcada y PATCH con false. |
+| Cancelar y confirmar descarte | success | DELETE elimina el inactivo; vuelve al listado. |
+| Intentar subir antes de título/categoría | error | Mensaje de validación; no crea borrador. |
+| API rechaza creación o subida | failure | Imagen fallida/reintentable y guardado bloqueado mientras haya trabajo pendiente. |
+| Abrir borrador existente | display | La casilla refleja false; el fallback true sólo conserva compatibilidad con DTO antiguo sin campo. |
+
+Invitados/clientes no acceden al detalle del borrador ni pueden cambiarlo:
+404 sin mutación. Activos mantienen GET público y escritura sólo de staff.
+La exposición de `is_active` en el detalle es administrativa. Permisos,
+persistencia real y foto multipart se verifican en APIClient; la casilla,
+navegación, payload y estados de imagen se verifican también en UI.
+
+### E2E Coverage Index — alcance r2
+
+| IDs existentes | Spec dueño | Estado de aceptación |
+|---|---|---|
+| `auth-sign-up-form` | `frontend/e2e/auth/auth.spec.ts` | Aprobado en `160beb3`: 503 → error/formulario, 429 inmediato y recuperación; API real/ UI con frontera simulada. |
+| `backoffice-peluch-create-draft-on-color-upload`, `backoffice-peluch-create-cancel-discards-draft`, `backoffice-peluch-edit` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Aprobado en `160beb3`: continuar, guardar, descartar y reabrir desmarcado; API real/ UI con frontera simulada. |
+
+Audit estático de esta rama documental: signup es partial (failure sin
+crédito); edit es partial (error/failure sin crédito); creación/descarte
+reciben crédito de los mocks antiguos. Esos estados no acreditan aceptación
+de los escenarios nuevos ni persistencia del backend. Freshness dio exit 0.
+
+Contraste posterior con aplicación/specs del tren `160beb3`: signup obtiene
+crédito estático de las cuatro clases, edit mantiene error/failure históricos
+sin crédito. E2E conjunto obtuvo 19/19 y dictamen APPROVED del Verifier sobre ese SHA;
+APIClient real y Jest cuentan también con artefactos aprobados del tren. Freshness del tren indicó
+fecha de formulario/tests más nueva que el mapa; este contraste dirigido no
+oculta el aviso y se repetirá tras integrar la actualización documental.
+
+### Corrección obligatoria de `home-to-catalog`
+
+El caso existente `should use browser back button correctly` espera una
+primera tarjeta visible, hace click y exige URL de detalle antes de retroceder.
+Después exige catálogo y finalmente Inicio. Conserva nombre, tags y las
+excepciones previas de selector; elimina únicamente el count/conditional que
+podía aprobar sin acciones. El fallo CI era distinto del registro: retrocedía
+antes de llegar al detalle. No se añade flujo, mock, helper, timeout o cambio
+de aplicación. La ejecución local anterior con catálogo vacío no acredita
+este comportamiento; el caso corregido requiere fixtures scratch útiles en
+el tren/CI antes de declararlo validado. La comprobación presente es estática.
+
+Las cuatro clases ya estaban declaradas para signup/creación; no se inventan
+outcomes faltantes ni se acreditan nuevos casos antes de ejecutarlos. Los gaps
+anteriores fuera de estos flujos se conservan. El rechazo adversarial de
+multipart pertenece a integración backend, no a un nuevo flujo de navegador.
 
 ---
 
@@ -1558,7 +1647,7 @@ These flows were registered after the "incremental color image upload" feature w
 
 | Condition | Behavior |
 |-----------|----------|
-| Staff dismisses the confirmation | Form stays open; draft is NOT deleted |
+| Staff dismisses the confirmation | El borrador no se elimina; la interfaz vuelve al listado. El spec de descarte sólo verifica la confirmación aceptada y el retorno. |
 | No draft yet created (cancel before first color upload) | No DELETE is issued; user navigates away immediately |
 | DELETE fails | Error message shown; user may retry or stay on form |
 

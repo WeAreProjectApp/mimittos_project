@@ -5,6 +5,33 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal r2 — 2026-10-10
+
+- [x] Acotar tres causas y propiedad por frente: multipart Django 6.0.9,
+  borradores administrativos y rechazo visible del registro sin envío
+  confirmado (`I-S-271c810dfba7`, `I-M-92a9cae19e6f`, `I-O-ffdd56735eed`).
+- [x] Actualizar contratos dirigidos del registro y mapa sin nuevas rutas,
+  flows ni ampliación de baseline.
+- [x] Integrar aplicación/tests/pin/documentación inicial: `160beb3bd70b1dd5b22c9a9b3d70def2464d1972`.
+- [x] Ejecutar 65 casos backend, 18 unit y gate estricto de seis archivos en
+  esa combinación; artefactos sin fallos/errores/skips.
+- [x] Completar E2E 19/19 y dictamen APPROVED de los tres candidatos en
+  `160beb3`; preservar el intento fallido del harness de cookies/hostname.
+- [x] Corregir únicamente el caso de retroceso que bloqueó CI: tarjeta visible,
+  llegada al detalle y dos destinos de back obligatorios; diff/AST/gate focal.
+- [ ] Integrar cierre documental y test corregido; fijar SHA final, ejecutar
+  retroceso con catálogo scratch útil y gate completo/freshness.
+- [ ] Terminar empaquetado de manifest exacto y comprobar CI/publicación del
+  nuevo HEAD con el conductor. Los 102 casos aprobados en `160beb3` no
+  acreditan automáticamente la nueva corrección ni el árbol final.
+
+APIClient usa scratch real y medios temporales; E2E usa UI real con frontera
+HTTP simulada. No afirmar integración navegador–Django ni monitoring vivo.
+Reporte: `docs/audits/2026-10-10-mimittos-improvement-pass-r2.md`; el informe
+anterior se conserva. El retorno visible de editar/borrar categorías sigue
+pendiente por cupo; Wompi y responsividad no se implementan en esta ronda.
+
+
 ## Ronda transversal dirigida — 2026-10-10
 
 - Corregir pre-registro: exigir contraseña nueva al verificar, invalidar la
