@@ -12,8 +12,8 @@ from freezegun import freeze_time
 from rest_framework import status
 
 from base_feature_app.models import PasswordCode
-from base_feature_app.tests.factories import OrderFactory
 from base_feature_app.models.password_code import PasswordCodeAttemptBudget
+from base_feature_app.tests.factories import OrderFactory
 from base_feature_app.tests.views.test_account_code_limits import _parallel_posts
 from base_feature_app.views import auth as auth_views
 
@@ -125,6 +125,7 @@ def test_registration_replaces_preregistered_credential(mock_captcha, api_client
     pytest.param({'new_password': {'value': 'OwnerPassword123!'}}, id='object'),
 ])
 def test_registration_rejects_invalid_password_without_consuming_code(api_client, password_fields):
+    """Verify invalid passwords preserve an available registration code."""
     user = get_user_model().objects.create_user(
         email='invalid-verification@example.com', password='Initial123!', email_verified=False,
     )
@@ -158,6 +159,7 @@ def test_registration_rejects_invalid_password_without_consuming_code(api_client
 ])
 def test_registration_rejection_preserves_credentials(api_client, account_state, code_state,
                                                      age_minutes, submitted_code):
+    """Verify rejected registration leaves existing credentials unchanged."""
     user_fields = {'email_verified': False, **account_state}
     user = get_user_model().objects.create_user(
         email='rejected-verification@example.com', password='Initial123!', **user_fields,
