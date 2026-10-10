@@ -4,7 +4,7 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.9
+**Version:** 1.5.10
 **Last Updated:** 2026-10-10
 
 
@@ -12,9 +12,28 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 La auditoría canónica `e2e-user-flows-check` contrasta exclusivamente puente
 administrativo y borrado de fotos con el código de sus autores. Añade dos IDs,
-sin inventar clases por cuota. Los specs están escritos; su ejecución sobre
-la combinación final aún está pendiente. El baseline real de login-CSRF se
-reprodujo sobre `7bd32780`, sin mocks de propiedad; no acredita la corrección.
+sin inventar clases por cuota. El Verifier ejecutó 17/17 E2E sobre
+`232d46706020c61fb48df4f1a23896bce22f8284`; el conductor confirmó
+130 casos focales, tres gates strict con Ruff real y CI 8/8 sobre ese
+conjunto. El baseline real de login-CSRF se reprodujo sobre `7bd32780`,
+sin mocks de propiedad; permanece separado de la aceptación corregida.
+
+### Revisión posterior del registro 1.5.10
+
+Se revisó el diff integrado `62baf3a..232d467`: el único archivo cambiado
+es `backend/base_feature_app/tests/views/test_admin_login_handoff.py`.
+El commit de Seguridad `3f1e282` añadió docstrings y sustituyó dos listas
+de nombres de parámetros por tuples, conservando entradas y assertions.
+El detector de freshness incluye ese test en sus fuentes; la presente
+revisión contrasta el puente y el borrado de fotos con la aplicación del
+queue y actualiza legítimamente el registro después de ese cambio.
+
+No cambian IDs, contratos ni outcomes: `admin-login-handoff` conserva
+success/error; `backoffice-peluch-color-photo-delete` conserva
+success/failure. Tampoco se alteran otros flujos ni los 32 flujos parciales
+históricos del audit global. La aceptación del conjunto anterior no se
+reetiqueta como ejecución de este nuevo commit documental; su cierre y
+procedencia quedan en el manifest final y el archivo de la ronda.
 
 ### Auth — handoff administrativo firmado
 
@@ -51,11 +70,12 @@ alcance a quitar el color completo, uploads ni descartar borradores.
 
 | ID | Spec dueño | Casos dirigidos y estado |
 |---|---|---|
-| `admin-login-handoff` | `frontend/e2e/auth/admin-login.spec.ts` | Tres casos: emisión real de Django Admin, JWT antiguo y rechazo real del handoff; aceptación runtime pendiente. |
-| `backoffice-peluch-color-photo-delete` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Cuatro casos: 404, 500, red y 204; aceptación runtime pendiente. |
+| `admin-login-handoff` | `frontend/e2e/auth/admin-login.spec.ts` | Tres casos: emisión real de Django Admin, JWT antiguo y rechazo real del handoff; aprobados por el Verifier en `232d467`. |
+| `backoffice-peluch-color-photo-delete` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Cuatro casos: 404, 500, red y 204; aprobados por el Verifier en `232d467`. |
 
 El gate estático focal pasó con severidad estricta y lint externo: cero
-errores; no equivale a aceptación de runtime. Correo sólo requiere pruebas
+errores; el runtime se acredita por la ejecución independiente sobre el
+SHA anterior indicado, no por el crédito estático. Correo sólo requiere pruebas
 backend del autor. Categorías continúa como deuda discrecional fuera de cupo.
 
 ---
