@@ -144,7 +144,7 @@ async function setupForm(
 /** Title + category: the minimum the form demands before it will create a draft. */
 async function fillBasics(page: Page) {
   await page.getByPlaceholder('Osito Suave Premium').fill('Osito de prueba');
-  await page.getByRole('combobox').first().selectOption({ label: 'Clásicos' });
+  await page.getByTestId('peluch-category-select').selectOption({ label: 'Clásicos' });
 }
 
 async function selectRojo(page: Page) {
@@ -157,8 +157,8 @@ async function selectRojo(page: Page) {
  * the input without it uploads nowhere.
  */
 async function addPhotos(page: Page, count: number) {
-  await page.getByRole('button', { name: 'Foto' }).first().click();
-  await page.locator('input[type="file"]').setInputFiles(
+  await page.getByTestId('peluch-color-photo-add-rojo').click();
+  await page.getByTestId('peluch-color-photo-input').setInputFiles(
     Array.from({ length: count }, (_, i) => ({
       name: `foto-${i + 1}.png`,
       mimeType: 'image/png',
@@ -191,9 +191,9 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     await fillBasics(page);
     await selectRojo(page);
     await addPhotos(page, 1);
-    await expect(page.getByText('✓')).toHaveCount(1);
+    await expect(page.getByTestId('peluch-color-photo-complete')).toHaveCount(1);
     await addPhotos(page, 1);
-    await expect(page.getByText('✓')).toHaveCount(2);
+    await expect(page.getByTestId('peluch-color-photo-complete')).toHaveCount(2);
     await expect(page.getByRole('button', { name: 'Crear peluche' })).toBeEnabled();
 
     await page.getByRole('button', { name: 'Crear peluche' }).click();
