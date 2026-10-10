@@ -5,13 +5,13 @@ needs correction, so the JSON shape is part of the API contract.
 """
 import pytest
 
+from base_feature_app.models import Order
 from base_feature_app.tests.factories import (
     GlobalColorFactory,
     GlobalSizeFactory,
     PeluchFactory,
     PeluchSizePriceFactory,
 )
-from base_feature_app.models import Order
 
 REMOVED_MEDIA_ID = 999999
 
