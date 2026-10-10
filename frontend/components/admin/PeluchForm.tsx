@@ -108,6 +108,8 @@ export function PeluchForm({ existing }: Props) {
   const [displayOrder, setDisplayOrder] = useState(100)
 
   const [saving, setSaving] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const discardingRef = useRef(false)
   const [error, setError] = useState('')
   const [slugManual, setSlugManual] = useState(false)
 
@@ -400,6 +402,7 @@ export function PeluchForm({ existing }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (discardingRef.current) return
     setError('')
     if (!form.title.trim() || !form.slug.trim() || !form.category) {
       setError('Título, slug y categoría son obligatorios.')
@@ -435,8 +438,22 @@ export function PeluchForm({ existing }: Props) {
   }
 
   async function handleCancel() {
+    if (discardingRef.current) return
     if (draftSlug && window.confirm('¿Descartar el borrador y sus fotos?')) {
-      try { await peluchAdminService.delete(draftSlug) } catch { /* ignore */ }
+      discardingRef.current = true
+      setDiscarding(true)
+      setError('')
+      try {
+        const response = await peluchAdminService.delete(draftSlug)
+        if (response.status !== 204) throw new Error('Draft deletion was not confirmed')
+        router.push('/backoffice/peluches')
+      } catch {
+        setError('No pudimos confirmar la eliminación del borrador. Intenta de nuevo.')
+      } finally {
+        discardingRef.current = false
+        setDiscarding(false)
+      }
+      return
     }
     router.push('/backoffice/peluches')
   }
@@ -754,10 +771,10 @@ export function PeluchForm({ existing }: Props) {
         </p>
       )}
       <div style={{ display: 'flex', gap: 12 }}>
-        <button type="submit" disabled={saving || hasPendingWork} style={{ padding: '12px 28px', background: 'var(--coral)', color: '#fff', border: 'none', borderRadius: 10, cursor: (saving || hasPendingWork) ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', opacity: (saving || hasPendingWork) ? .6 : 1 }}>
+        <button type="submit" disabled={saving || hasPendingWork || discarding} style={{ padding: '12px 28px', background: 'var(--coral)', color: '#fff', border: 'none', borderRadius: 10, cursor: (saving || hasPendingWork || discarding) ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', opacity: (saving || hasPendingWork || discarding) ? .6 : 1 }}>
           {saving ? 'Guardando...' : (existing ? 'Guardar cambios' : 'Crear peluche')}
         </button>
-        <button type="button" onClick={handleCancel} style={{ padding: '12px 20px', background: 'var(--cream-warm)', color: 'var(--navy)', border: '1px solid rgba(27,42,74,.1)', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+        <button type="button" disabled={discarding} onClick={handleCancel} style={{ padding: '12px 20px', background: 'var(--cream-warm)', color: 'var(--navy)', border: '1px solid rgba(27,42,74,.1)', borderRadius: 10, cursor: discarding ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
           Cancelar
         </button>
       </div>
