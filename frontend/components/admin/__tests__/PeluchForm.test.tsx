@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals'
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -119,6 +119,7 @@ const mockExisting: PeluchDetail = {
 }
 
 const photoDeletionError = 'No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.'
+const draftDeletionError = 'No pudimos confirmar la eliminación del borrador. Intenta de nuevo.'
 const existingWithPhotos: PeluchDetail = {
   ...mockExisting,
   available_colors: [{
@@ -132,12 +133,152 @@ describe('PeluchForm', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(peluchAdminService.deleteColorImage as jest.Mock).mockReset()
+    ;(peluchAdminService.delete as jest.Mock).mockReset()
     mockUseRouter.mockReturnValue({ push: jest.fn() })
     ;(peluchService.getCategories as jest.Mock).mockResolvedValue(mockCategories)
     ;(peluchService.getColors as jest.Mock).mockResolvedValue(mockColors)
     ;(peluchService.getSizes as jest.Mock).mockResolvedValue(mockSizes)
     global.URL.createObjectURL = jest.fn().mockReturnValue('blob:mock')
     global.URL.revokeObjectURL = jest.fn()
+  })
+
+  afterEach(() => { jest.restoreAllMocks() })
+
+  async function renderUploadedDraft() {
+    ;(peluchAdminService.create as jest.Mock).mockResolvedValue({ slug: 'osito-coral', available_colors: [] })
+    ;(peluchAdminService.update as jest.Mock).mockResolvedValue({})
+    ;(uploadColorImageWithRetry as jest.Mock).mockResolvedValue({ id: 1, color_id: 1, url: '/srv.jpg' })
+    const push = jest.fn()
+    mockUseRouter.mockReturnValue({ push })
+    render(<PeluchForm />)
+    await userEvent.type(await screen.findByPlaceholderText('Osito Suave Premium'), 'Osito Coral')
+    await userEvent.selectOptions(screen.getByTestId('peluch-category-select'), '1')
+    await userEvent.click(screen.getByRole('button', { name: /Coral/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Foto/i }))
+    await userEvent.upload(screen.getByTestId('peluch-color-photo-input'), new File(['x'], 'p.jpg', { type: 'image/jpeg' }))
+    await screen.findByTestId('peluch-color-photo-complete')
+    return push
+  }
+
+  it.each([
+    ['404', { response: { status: 404 } }],
+    ['500', { response: { status: 500 } }],
+    ['lost acknowledgement', new Error('Network Error')],
+  ])('keeps the uploaded draft after discard fails with %s', async (_name, error) => {
+    ;(peluchAdminService.delete as jest.Mock).mockRejectedValue(error)
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(await screen.findByText(draftDeletionError)).toBeVisible()
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
+    expect(screen.getByRole('button', { name: 'Crear peluche' })).toBeEnabled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('returns to the list after retry confirms the draft deletion', async () => {
+    ;(peluchAdminService.delete as jest.Mock)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockResolvedValueOnce({ status: 204 })
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await screen.findByText(draftDeletionError)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(push).toHaveBeenCalledWith('/backoffice/peluches')
+    expect(screen.queryByText(draftDeletionError)).not.toBeInTheDocument()
+    expect(peluchAdminService.delete).toHaveBeenNthCalledWith(2, 'osito-coral')
+  })
+
+  it('retains the unconfirmed draft after retry returns 404', async () => {
+    let rejectRetry!: (error: { response: { status: number } }) => void
+    const retryDelete = new Promise<never>((_resolve, reject) => { rejectRetry = reject })
+    ;(peluchAdminService.delete as jest.Mock)
+      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockReturnValueOnce(retryDelete)
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await screen.findByText(draftDeletionError)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(peluchAdminService.delete).toHaveBeenCalledTimes(2)
+    expect(peluchAdminService.delete).toHaveBeenNthCalledWith(2, 'osito-coral')
+    expect(screen.queryByText(draftDeletionError)).not.toBeInTheDocument()
+    await act(async () => {
+      rejectRetry({ response: { status: 404 } })
+      await retryDelete.catch(() => {})
+    })
+    await screen.findByText(draftDeletionError)
+    expect(screen.getByText(draftDeletionError)).toHaveTextContent(draftDeletionError)
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
+    expect(screen.getByTestId('peluch-color-photo-complete')).toBeVisible()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft when deletion responds without a 204 acknowledgement', async () => {
+    ;(peluchAdminService.delete as jest.Mock).mockResolvedValue({ status: 200 })
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    await screen.findByText(draftDeletionError)
+    expect(screen.getByText(draftDeletionError)).toHaveTextContent(draftDeletionError)
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/srv.jpg')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('returns to the list when draft discard confirmation is declined', async () => {
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(push).toHaveBeenCalledWith('/backoffice/peluches')
+    expect(screen.getByTestId('peluch-color-photo-complete')).toBeVisible()
+    expect(peluchAdminService.delete).not.toHaveBeenCalled()
+  })
+
+  it('sends one deletion when discard is clicked twice before acknowledgement', async () => {
+    let finishDelete!: (response: { status: number }) => void
+    const pendingDelete = new Promise<{ status: number }>((resolve) => { finishDelete = resolve })
+    ;(peluchAdminService.delete as jest.Mock).mockReturnValue(pendingDelete)
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+    const cancelButton = screen.getByRole('button', { name: 'Cancelar' })
+
+    act(() => { cancelButton.click(); cancelButton.click() })
+
+    expect(peluchAdminService.delete).toHaveBeenCalledTimes(1)
+    expect(cancelButton).toBeDisabled()
+    expect(push).not.toHaveBeenCalled()
+    await act(async () => { finishDelete({ status: 204 }); await pendingDelete })
+    expect(push).toHaveBeenCalledTimes(1)
+  })
+
+  it('prevents saving the draft while deletion awaits acknowledgement', async () => {
+    let finishDelete!: (response: { status: number }) => void
+    const pendingDelete = new Promise<{ status: number }>((resolve) => { finishDelete = resolve })
+    ;(peluchAdminService.delete as jest.Mock).mockReturnValue(pendingDelete)
+    const push = await renderUploadedDraft()
+    jest.spyOn(window, 'confirm').mockReturnValue(true)
+    ;(peluchAdminService.update as jest.Mock).mockClear()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    const submit = screen.getByRole('button', { name: 'Crear peluche' })
+
+    fireEvent.submit(submit.closest('form')!)
+
+    expect(submit).toBeDisabled()
+    expect(screen.getByTestId('peluch-color-photo-complete')).toBeVisible()
+    expect(peluchAdminService.update).not.toHaveBeenCalled()
+    expect(peluchAdminService.create).toHaveBeenCalledTimes(1)
+    expect(push).not.toHaveBeenCalled()
+    await act(async () => { finishDelete({ status: 204 }); await pendingDelete })
   })
 
   it.each([
@@ -432,7 +573,7 @@ describe('PeluchForm', () => {
     ])
     ;(peluchAdminService.create as jest.Mock).mockResolvedValue({ slug: 'osito-coral', available_colors: [] })
     ;(peluchAdminService.update as jest.Mock).mockResolvedValue({})
-    ;(peluchAdminService.delete as jest.Mock).mockResolvedValue(undefined)
+    ;(peluchAdminService.delete as jest.Mock).mockResolvedValue({ status: 204 })
     ;(uploadColorImageWithRetry as jest.Mock).mockResolvedValue({ id: 1, color_id: 1, url: '/srv.jpg' })
 
     const mockPush = jest.fn()

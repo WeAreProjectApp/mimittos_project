@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 
@@ -47,6 +47,7 @@ export default function BackofficeDashboard() {
   const [exporting, setExporting] = useState(false)
   const [dateFrom, setDateFrom] = useState(monthAgo())
   const [dateTo, setDateTo] = useState(today())
+  const analyticsRequest = useRef(0)
 
   useEffect(() => {
     api.get('/analytics/kpis/')
@@ -54,15 +55,19 @@ export default function BackofficeDashboard() {
       .catch(() => null)
       .finally(() => setKpisLoading(false))
     loadAnalytics()
+    return () => { analyticsRequest.current += 1 }
   }, [])
 
   async function loadAnalytics() {
+    const request = ++analyticsRequest.current
     setAnalyticsLoading(true)
     try {
       const result = await analyticsAdminService.getDashboard(dateFrom, dateTo)
-      setData(result)
+      if (request === analyticsRequest.current) setData(result)
     } catch { /* silently fail */ }
-    finally { setAnalyticsLoading(false) }
+    finally {
+      if (request === analyticsRequest.current) setAnalyticsLoading(false)
+    }
   }
 
   async function handleExport() {

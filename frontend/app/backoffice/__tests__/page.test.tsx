@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
-import { render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 jest.mock('../../../lib/services/http', () => ({
@@ -38,6 +39,44 @@ const appliedAnalytics = {
 }
 const originalCreateObjectURL = URL.createObjectURL
 const originalRevokeObjectURL = URL.revokeObjectURL
+
+function deferredAnalytics() {
+  let resolve!: (value: { data: typeof appliedAnalytics }) => void
+  let reject!: (reason: Error) => void
+  const promise = new Promise<{ data: typeof appliedAnalytics }>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function queueAnalytics(...requests: ReturnType<typeof deferredAnalytics>[]) {
+  const dashboardRequests = [...requests]
+  mockApi.get.mockImplementation((url) => {
+    if (url === '/analytics/dashboard/') return dashboardRequests.shift()!.promise
+    return Promise.resolve({ data: null })
+  })
+}
+
+async function resolveAnalytics(request: ReturnType<typeof deferredAnalytics>, totalOrders: number) {
+  await act(async () => {
+    request.resolve({ data: { ...appliedAnalytics, total_orders: totalOrders } })
+    await request.promise
+  })
+}
+
+async function rejectAnalytics(request: ReturnType<typeof deferredAnalytics>) {
+  await act(async () => {
+    request.reject(new Error('Analytics unavailable'))
+    await request.promise.catch(() => {})
+  })
+}
+
+function applyPeriod(from = '2026-04-01', to = '2026-04-30') {
+  fireEvent.change(screen.getByTestId('date-from'), { target: { value: from } })
+  fireEvent.change(screen.getByTestId('date-to'), { target: { value: to } })
+  fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
+}
 
 describe('BackofficeDashboard', () => {
   beforeEach(() => {
@@ -104,6 +143,150 @@ describe('BackofficeDashboard', () => {
     expect(mockApi.get).toHaveBeenLastCalledWith('/analytics/dashboard/', {
       params: { date_from: '2026-04-01', date_to: '2026-04-30' },
     })
+  })
+
+  it('keeps the latest period after an older successful response arrives', async () => {
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(older, latest)
+    render(<BackofficePage />)
+    applyPeriod()
+
+    await resolveAnalytics(latest, 12)
+    await resolveAnalytics(older, 42)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+    expect(screen.queryByText('42 pedidos · $123.000 en abonos confirmados')).not.toBeInTheDocument()
+  })
+
+  it('keeps loading the latest period when an older response succeeds', async () => {
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(older, latest)
+    render(<BackofficePage />)
+    applyPeriod()
+
+    await resolveAnalytics(older, 42)
+
+    expect(screen.getByText('Cargando analytics...')).toBeVisible()
+    expect(screen.queryByText('42 pedidos · $123.000 en abonos confirmados')).not.toBeInTheDocument()
+    await resolveAnalytics(latest, 12)
+    expect(screen.queryByText('Cargando analytics...')).not.toBeInTheDocument()
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+  })
+
+  it('keeps loading the latest period when an older response fails', async () => {
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(older, latest)
+    render(<BackofficePage />)
+    applyPeriod()
+
+    await rejectAnalytics(older)
+
+    expect(screen.getByText('Cargando analytics...')).toBeVisible()
+    await resolveAnalytics(latest, 12)
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+  })
+
+  it('preserves the latest result after an older response fails', async () => {
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(older, latest)
+    render(<BackofficePage />)
+    applyPeriod()
+    await resolveAnalytics(latest, 12)
+
+    await rejectAnalytics(older)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+    expect(screen.queryByText('Cargando analytics...')).not.toBeInTheDocument()
+  })
+
+  it('retains the accepted fallback after the latest period fails', async () => {
+    const accepted = deferredAnalytics()
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(accepted, older, latest)
+    render(<BackofficePage />)
+    await resolveAnalytics(accepted, 9)
+    applyPeriod()
+    applyPeriod('2026-05-01', '2026-05-31')
+
+    await rejectAnalytics(latest)
+    await resolveAnalytics(older, 42)
+
+    expect(screen.getByText('9 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+    expect(screen.queryByText('Cargando analytics...')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('ends the initial loading without inventing analytics after failure', async () => {
+    const initial = deferredAnalytics()
+    queueAnalytics(initial)
+    render(<BackofficePage />)
+
+    await rejectAnalytics(initial)
+
+    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeEnabled()
+    expect(screen.queryByText('Cargando analytics...')).not.toBeInTheDocument()
+    expect(screen.queryByText(/pedidos ·/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('accepts a newly applied period after a request fails', async () => {
+    const initial = deferredAnalytics()
+    const retry = deferredAnalytics()
+    queueAnalytics(initial, retry)
+    render(<BackofficePage />)
+    await rejectAnalytics(initial)
+
+    applyPeriod('2026-05-01', '2026-05-31')
+    await resolveAnalytics(retry, 12)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+    expect(mockApi.get).toHaveBeenLastCalledWith('/analytics/dashboard/', {
+      params: { date_from: '2026-05-01', date_to: '2026-05-31' },
+    })
+  })
+
+  it('keeps the current effect result under Strict Mode', async () => {
+    const cleanedUp = deferredAnalytics()
+    const current = deferredAnalytics()
+    queueAnalytics(cleanedUp, current)
+    render(<StrictMode><BackofficePage /></StrictMode>)
+
+    await resolveAnalytics(current, 12)
+    await resolveAnalytics(cleanedUp, 42)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+  })
+
+  it('accepts the running period while the date inputs are edited', async () => {
+    const initial = deferredAnalytics()
+    queueAnalytics(initial)
+    render(<BackofficePage />)
+
+    fireEvent.change(screen.getByTestId('date-from'), { target: { value: '2026-05-01' } })
+    await resolveAnalytics(initial, 12)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
+  })
+
+  it('uses invocation order when the same period is applied twice', async () => {
+    const initial = deferredAnalytics()
+    const older = deferredAnalytics()
+    const latest = deferredAnalytics()
+    queueAnalytics(initial, older, latest)
+    render(<BackofficePage />)
+    await resolveAnalytics(initial, 9)
+    applyPeriod()
+    applyPeriod()
+
+    await resolveAnalytics(latest, 12)
+    await resolveAnalytics(older, 42)
+
+    expect(screen.getByText('12 pedidos · $123.000 en abonos confirmados')).toBeVisible()
   })
 
   it('exports CSV using the dates the staff selected', async () => {
