@@ -4,9 +4,61 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.8
+**Version:** 1.5.9
 **Last Updated:** 2026-10-10
 
+
+## Revisión dirigida r3 — 2026-10-10
+
+La auditoría canónica `e2e-user-flows-check` contrasta exclusivamente puente
+administrativo y borrado de fotos con el código de sus autores. Añade dos IDs,
+sin inventar clases por cuota. Los specs están escritos; su ejecución sobre
+la combinación final aún está pendiente. El baseline real de login-CSRF se
+reprodujo sobre `7bd32780`, sin mocks de propiedad; no acredita la corrección.
+
+### Auth — handoff administrativo firmado
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Superusuario elige «Login as this user» y el destinatario abre el handoff | success | El fragmento firmado se canjea por `access`, `refresh` y el usuario objetivo mediante POST `/api/admin-login/handoff/`; la sesión llega a `/`. |
+| Abrir enlace sin handoff, JWT legacy en query o handoff inválido/expirado | error | Se limpian fragmento y parámetros `access`/`refresh`, aparece «El enlace de acceso no es válido o ha expirado.» y la sesión previa permanece. |
+| Fallo diferenciado de servidor o transporte | n/a | La UI no define un resultado distinto del rechazo mostrado; no se añade clase por cuota. |
+| Estado transitorio de canje | n/a | «Iniciando sesión...» no habilita una decisión ni interacción separada. |
+
+El actor emisor es superusuario activo/verificado; el destinatario es un
+usuario activo/verificado elegible. El E2E inicia sesión en Django Admin real,
+consume su enlace y crea un pedido sintético por checkout real. El rechazo
+de JWT antiguo conserva B: B consulta su dirección y A recibe 403. La BD
+SQLite, API y navegador deben corresponder al SHA probado; respuestas HTTP
+simuladas no acreditan esta cadena de propiedad. La expiración y elegibilidad
+se comprueban en backend, sin añadir E2E redundantes.
+
+### Backoffice — borrar foto de color persistida
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Staff elimina una foto persistida y el servidor responde 204 | success | Se retira sólo la miniatura elegida; las fotos hermanas siguen visibles. |
+| DELETE devuelve 404, 500 o falla la red | failure | Todas las fotos persistidas permanecen y aparece «No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.». |
+| Validación propia de formulario | n/a | La acción no tiene validación local; el alcance aprobado cubre 404, 500 y red. |
+| Vista independiente de galería | n/a | Las fotos son precondición del borrado, bajo el detalle existente. |
+
+La UI real usa `peluch-color-photo` y `peluch-color-photo-remove`. El E2E
+controla sólo la frontera HTTP de DELETE; comprueba el efecto visible y la
+foto hermana, sin atribuir persistencia de backend al mock. No amplía el
+alcance a quitar el color completo, uploads ni descartar borradores.
+
+### E2E Coverage Index — alcance r3
+
+| ID | Spec dueño | Casos dirigidos y estado |
+|---|---|---|
+| `admin-login-handoff` | `frontend/e2e/auth/admin-login.spec.ts` | Tres casos: emisión real de Django Admin, JWT antiguo y rechazo real del handoff; aceptación runtime pendiente. |
+| `backoffice-peluch-color-photo-delete` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Cuatro casos: 404, 500, red y 204; aceptación runtime pendiente. |
+
+El gate estático focal pasó con severidad estricta y lint externo: cero
+errores; no equivale a aceptación de runtime. Correo sólo requiere pruebas
+backend del autor. Categorías continúa como deuda discrecional fuera de cupo.
+
+---
 
 ## Revisión dirigida r2 — 2026-10-10
 

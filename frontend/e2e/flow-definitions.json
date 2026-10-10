@@ -1,5 +1,5 @@
 {
-  "version": "1.5.8",
+  "version": "1.5.9",
   "lastUpdated": "2026-10-10",
   "flows": {
     "home-loads": {
@@ -1446,6 +1446,35 @@
       "expectedSpecs": 1,
       "outcomes": [
         "success"
+      ]
+    },
+    "admin-login-handoff": {
+      "name": "Signed administrative login handoff",
+      "module": "auth",
+      "roles": [
+        "superuser",
+        "user"
+      ],
+      "priority": "P1",
+      "description": "Un superusuario inicia «Login as this user» desde Django Admin; el navegador recibe un handoff firmado de 60 segundos en el fragmento de /admin-login y lo canjea mediante POST /api/admin-login/handoff/ por access, refresh y el usuario objetivo antes de ir a /. Tokens legacy en query o un handoff inválido, expirado o rechazado muestran «El enlace de acceso no es válido o ha expirado.» sin sustituir la sesión existente.",
+      "expectedSpecs": 3,
+      "outcomes": [
+        "success",
+        "error"
+      ]
+    },
+    "backoffice-peluch-color-photo-delete": {
+      "name": "Delete persisted peluch color photo",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P2",
+      "description": "En /backoffice/peluches/[slug], staff elimina una foto de color persistida mediante DELETE /api/peluches/{slug}/color-image/{colorSlug}/{photoId}/. Sólo una respuesta 204 quita la foto seleccionada; 404, 500 o fallo de red conservan todas las fotos persistidas y muestran «No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.»",
+      "expectedSpecs": 4,
+      "outcomes": [
+        "success",
+        "failure"
       ]
     }
   }
