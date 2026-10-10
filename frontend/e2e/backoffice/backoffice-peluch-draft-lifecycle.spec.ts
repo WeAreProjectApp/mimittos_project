@@ -331,6 +331,7 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     await expect(page).toHaveURL(/\/backoffice\/peluches$/);
     expect(captured.deleted).toContain(`/api/peluches/${DRAFT_SLUG}/`);
   });
+
   for (const draftDeleteResult of [200, 404, 500, 'network'] as const) {
     // Bug caught: an unconfirmed draft DELETE navigates away and loses the editable form.
     test(`retries draft discard after unconfirmed DELETE ${draftDeleteResult}`,

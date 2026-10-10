@@ -34,15 +34,23 @@ color completo ni los 32 flujos parciales históricos.
 
 | ID | Spec dueño | Casos dirigidos y estado |
 |---|---|---|
-| `backoffice-peluch-create-cancel-discards-draft` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Conserva éxito previo; cuatro casos nuevos de fallo seguido de reintento, independientes del DELETE de foto. Autoría pendiente de ejecución sobre el runtime combinado de r4. |
-| `backoffice-analytics-date-filter` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | Conserva aplicación normal; dos casos nuevos con respuestas HTTP retenidas comprueban datos y carga después de ambas respuestas. Autoría pendiente de ejecución sobre el runtime combinado de r4. |
+| `backoffice-peluch-create-cancel-discards-draft` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Cinco casos aprobados: éxito previo y cuatro respuestas no confirmadas (200, 404, 500 y red), seguidas de reintento204; control independiente del DELETE de foto. Ejecución local de autoría r4, no verificación final del tren. |
+| `backoffice-analytics-date-filter` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | Tres casos aprobados: aplicación normal y dos órdenes de respuestas HTTP retenidas, con datos/carga visibles comprobados después de ambas respuestas. Ejecución local de autoría r4, no verificación final del tren. |
 
 La corrección del enlace de correo se comprueba mediante `mailoutbox` en backend;
 la navegación a su destino reutiliza el caso de registro de
 `frontend/e2e/auth/auth.spec.ts` sin modificarlo. Las pruebas con frontera HTTP
 simulada acreditan comportamiento visible del widget, no persistencia de Django.
-La autoría y el crédito estático no reemplazan ejecución; el conductor asociará
-los artefactos nativos al SHA combinado probado, sin atribuirle ejecuciones de r3.
+La autoría de pruebas `9387b564c0a9758a26e545fb693af5dee73a11c8` ejecutó **9/9 E2E** sin fallos,
+reintentos ni omitidos: ocho casos en los dos specs dirigidos y uno de registro
+existente. La aplicación servida por el runtime scratch correspondía a
+`94937047f52588c7330bcde01f429c73634a10fb`; son SHAs distintos y la ejecución
+no se atribuye al commit final del tren. El gate dirigido strict, junk-error y
+ESLint real terminó sin hallazgos. Los JSON/JUnit nativos y comandos están en
+`frontend/test-results/improvement-20261010-r4/autor-qa/lote-2/` y `lote-3/`;
+el gate corresponde a `gate-9387b56/`. La primera llamada, `lote-1/`, no ejecutó
+pruebas por una configuración externa que cargaba Playwright dos veces; se
+conserva como error de infraestructura sin crédito de aceptación.
 
 ---
 
@@ -1757,7 +1765,7 @@ These flows were registered after the "incremental color image upload" feature w
 
 | Condition | Behavior |
 |-----------|----------|
-| Staff dismisses the confirmation | El borrador no se elimina; la interfaz vuelve al listado. El spec de descarte sólo verifica la confirmación aceptada y el retorno. |
+| Staff dismisses the confirmation | El borrador no se elimina; la interfaz vuelve al listado sin DELETE. La ejecución dirigida r4 verifica confirmaciones aceptadas; esta rama conserva su contrato previo. |
 | No draft yet created (cancel before first color upload) | No DELETE is issued; user navigates away immediately |
 | DELETE no confirma 204: HTTP 200, 404, 500 o desconexión | Permanece en el formulario con título, categoría y fotografía; muestra «No pudimos confirmar la eliminación del borrador. Intenta de nuevo.» y permite reintentar. Sólo un 204 posterior vuelve al listado. |
 
