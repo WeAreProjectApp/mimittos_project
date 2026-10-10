@@ -228,6 +228,7 @@ describe('BackofficeDashboard', () => {
 
     await rejectAnalytics(initial)
 
+    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeEnabled()
     expect(screen.queryByText('Cargando analytics...')).not.toBeInTheDocument()
     expect(screen.queryByText(/pedidos ·/)).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
