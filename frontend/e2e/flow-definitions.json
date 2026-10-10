@@ -1,6 +1,6 @@
 {
-  "version": "1.5.7",
-  "lastUpdated": "2026-10-09",
+  "version": "1.5.8",
+  "lastUpdated": "2026-10-10",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -421,7 +421,7 @@
         "guest"
       ],
       "priority": "P1",
-      "description": "El visitante acepta términos y CAPTCHA cuando corresponde; el registro crea una cuenta activa con correo pendiente y muestra la verificación sin emitir tokens.",
+      "description": "El visitante acepta términos y CAPTCHA cuando corresponde. Si se confirma el envío, el registro mantiene el correo pendiente y muestra la verificación sin emitir tokens. Si el envío devuelve False, responde 503 con un error visible y conserva formulario, cuenta pendiente, código y presupuesto; un reintento inmediato recibe 429 y después de al menos un minuto puede volver a solicitar el registro.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -798,7 +798,7 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff on /backoffice/peluches/[slug] edits fields and submits PATCH /api/peluches/{slug}/",
+      "description": "Staff abre un peluche activo o borrador en /backoffice/peluches/[slug], conserva la casilla de publicación según is_active y guarda mediante PATCH /api/peluches/{slug}/. Guardar un borrador desmarcado no lo publica. El detalle de borradores permanece oculto para invitados y clientes.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1311,7 +1311,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "When staff uploads the first color image on /backoffice/peluches/nuevo, a DRAFT peluch (is_active=false) is POSTed to /api/peluches/ immediately; the form transitions to edit mode (PATCH thereafter). Before any color image is uploaded, no draft is created.",
+      "description": "La primera foto de color en /backoffice/peluches/nuevo crea un borrador is_active=false. Staff puede continuar subiendo fotos y guardar mediante PATCH del mismo slug; la publicación final respeta la casilla elegida. Antes de subir fotos no se crea borrador; un rechazo conserva el estado visible de fallo de la imagen.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
@@ -1342,7 +1342,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "After a draft peluch has been auto-created, staff clicks 'Cancelar'. A confirmation prompt asks whether to discard the draft. On confirmation, DELETE /api/peluches/{slug}/ is called and the user is returned to /backoffice/peluches. If staff dismisses the prompt, the form stays open.",
+      "description": "Después de crear un borrador por la primera foto, staff pulsa Cancelar y confirma: DELETE /api/peluches/{slug}/ elimina el borrador inactivo y la interfaz regresa al listado. Si descarta la confirmación, conserva el formulario y el borrador.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"

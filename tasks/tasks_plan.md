@@ -5,6 +5,28 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal r2 — 2026-10-10
+
+- [x] Acotar tres causas y propiedad por frente: multipart Django 6.0.9,
+  borradores administrativos y rechazo visible del registro sin envío
+  confirmado (`I-S-271c810dfba7`, `I-M-92a9cae19e6f`, `I-O-ffdd56735eed`).
+- [x] Actualizar contratos dirigidos del registro y mapa sin nuevas rutas,
+  flows ni ampliación de baseline.
+- [ ] Integrar aplicación/tests/documentación en un SHA limpio.
+- [ ] Ejecutar QA única: multipart real y controles de upload; permisos y
+  lifecycle real de borrador; 503/429/recuperación signup; estado del formulario
+  y E2E de ambos ámbitos. Máximo veinte casos por lote, tres comandos por ciclo
+  y dos specs E2E por llamada; ninguna suite completa local.
+- [ ] Asociar JUnit/Playwright JSON/gate al SHA exacto, distinguir evidencia de
+  autoría de aceptación combinada y verificar CI/publicación con el conductor.
+
+APIClient usa scratch real y medios temporales; E2E usa UI real con frontera
+HTTP simulada. No afirmar integración navegador–Django ni monitoring vivo.
+Reporte: `docs/audits/2026-10-10-mimittos-improvement-pass-r2.md`; el informe
+anterior se conserva. El retorno visible de editar/borrar categorías sigue
+pendiente por cupo; Wompi y responsividad no se implementan en esta ronda.
+
+
 ## Ronda transversal dirigida — 2026-10-10
 
 - Corregir pre-registro: exigir contraseña nueva al verificar, invalidar la
