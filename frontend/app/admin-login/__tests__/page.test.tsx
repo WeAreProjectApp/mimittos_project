@@ -88,7 +88,8 @@ describe('AdminLoginPage', () => {
     window.history.replaceState(null, '', '/admin-login#handoff=proof');
     exchange.mockResolvedValue(false);
     render(<AdminLoginPage />);
-    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent('El enlace de acceso no es válido o ha expirado.');
+    expect(window.location.pathname).toBe('/admin-login');
     expect(replace).not.toHaveBeenCalled();
   });
 });
