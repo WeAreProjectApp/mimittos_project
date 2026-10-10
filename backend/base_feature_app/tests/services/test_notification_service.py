@@ -73,6 +73,45 @@ def order_with_old_email(base_order):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
+@override_settings(FRONTEND_URL='https://store.example.test')
+def test_guest_confirmation_text_links_to_sign_up(base_order, mailoutbox):
+    NotificationService.notify_order_confirmation(base_order)
+
+    assert 'Crear cuenta → https://store.example.test/sign-up' in mailoutbox[0].body
+
+
+@pytest.mark.django_db
+@override_settings(FRONTEND_URL='https://store.example.test')
+def test_guest_confirmation_html_links_to_sign_up(base_order, mailoutbox):
+    NotificationService.notify_order_confirmation(base_order)
+
+    html = mailoutbox[0].alternatives[0].content
+    assert re.search(r'<a href="https://store\.example\.test/sign-up"[^>]*>Créala aquí</a>', html)
+
+
+@pytest.mark.django_db
+@override_settings(FRONTEND_URL='https://store.example.test/?origin="><img src=x onerror=alert(1)>')
+def test_guest_confirmation_html_escapes_registration_href(base_order, mailoutbox):
+    NotificationService.notify_order_confirmation(base_order)
+
+    html = mailoutbox[0].alternatives[0].content
+    assert 'href="https://store.example.test/?origin=&quot;&gt;&lt;img src=x onerror=alert(1)&gt;/sign-up"' in html
+    assert '<img src=x' not in html
+
+
+@pytest.mark.django_db
+@override_settings(FRONTEND_URL='https://store.example.test')
+def test_existing_customer_confirmation_omits_registration_invitation(base_order, django_user_model, mailoutbox):
+    django_user_model.objects.create_user(email=base_order.customer_email)
+
+    NotificationService.notify_order_confirmation(base_order)
+
+    email = mailoutbox[0]
+    assert 'Crear cuenta →' not in email.body
+    assert 'Créala aquí' not in email.alternatives[0].content
+
+
+@pytest.mark.django_db
 def test_confirmation_text_reports_paid_amount(paid_order, mailoutbox):
     order, label, _admin_label, expected_amount = paid_order
 

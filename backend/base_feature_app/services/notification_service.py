@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
+from django.utils.html import format_html
 
 from base_feature_app.models import Order
 from base_feature_app.services.order_access_service import OrderAccessService
@@ -55,7 +56,7 @@ class NotificationService:
 
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
         tracking_url = OrderAccessService.tracking_url(order)
-        register_url = f'{frontend_url}/auth/register'
+        register_url = f'{frontend_url}/sign-up'
         payment_label, payment_amount = _payment_summary(order, deposit_label='Abono pagado')
 
         subject = f'¡Tu pedido {order.order_number} está confirmado! 🧸'
@@ -101,8 +102,11 @@ class NotificationService:
             details=details,
             cta={'text': 'Ver seguimiento', 'url': tracking_url},
             footer_note=(
-                f'¿Aún no tienes cuenta? <a href="{register_url}" style="color:#D4848A;">Créala aquí</a> '
-                f'para revisar el historial completo de tus pedidos.'
+                format_html(
+                    '¿Aún no tienes cuenta? <a href="{}" style="color:#D4848A;">Créala aquí</a> '
+                    'para revisar el historial completo de tus pedidos.',
+                    register_url,
+                )
                 if not has_account else None
             ),
             preheader=f'Pedido {order.order_number} confirmado · seguimiento incluido.',
