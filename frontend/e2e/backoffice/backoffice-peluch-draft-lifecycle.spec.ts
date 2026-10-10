@@ -63,7 +63,7 @@ async function setupStaffAuth(page: Page) {
  */
 async function setupForm(
   page: Page,
-  opts: { createStatus?: number; uploadStatus?: number; reopenDraft?: boolean } = {},
+  opts: { createStatus?: number; uploadStatus?: number; reopenDraft?: boolean; persistedPhotos?: boolean; deleteResult?: number | 'network' } = {},
 ): Promise<Captured> {
   const captured: Captured = { createBodies: [], patchBodies: [], deleted: [], uploaded: 0 };
   const { createStatus = 201, uploadStatus = 201 } = opts;
@@ -76,7 +76,7 @@ async function setupForm(
     has_huella: false, has_corazon: false, has_audio: false,
     huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0,
     description: [], specifications: {}, care_instructions: [], size_prices: [],
-    available_colors: [], gallery_urls: [],
+    available_colors: opts.persistedPhotos ? [{ ...COLORS[0], sort_order: 1, preview_url: '/media/r3-color-1.png', image_count: 2, images: [{ id: 501, url: '/media/r3-color-1.png' }, { id: 502, url: '/media/r3-color-2.png' }] }] : [], gallery_urls: [],
   };
 
   await setupStaffAuth(page);
@@ -127,6 +127,11 @@ async function setupForm(
   // Registered AFTER the broad pattern above so it wins (reverse-order matching).
   // Image upload: POST /peluches/<slug>/color-image/<colorSlug>/
   await page.route('**/api/peluches/*/color-image/**', (route: Route) => {
+    if (route.request().method() === 'DELETE') {
+      captured.deleted.push(new URL(route.request().url()).pathname);
+      if (opts.deleteResult === 'network') return route.abort('failed');
+      return route.fulfill({ status: opts.deleteResult ?? 204, body: '' });
+    }
     if (uploadStatus >= 400) return route.fulfill({ status: uploadStatus, contentType: 'application/json', body: '{}' });
     captured.uploaded += 1;
     return route.fulfill({
@@ -323,4 +328,48 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     await expect(page).toHaveURL(/\/backoffice\/peluches$/);
     expect(captured.deleted).toContain(`/api/peluches/${DRAFT_SLUG}/`);
   });
+});
+
+const persistedPhoto = (page: Page, url: string) => page.getByTestId('peluch-color-photo').filter({ has: page.locator(`img[src="${url}"]`) });
+
+const PHOTO_DELETE_ERROR = 'No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.';
+
+test.describe('Backoffice — confirmed color photo removal', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const deleteResult of [404, 500, 'network'] as const) {
+    // Bug caught: a rejected DELETE hides a persisted photo instead of preserving it for retry.
+    test(`keeps the persisted photo when DELETE fails with ${deleteResult}`,
+      { tag: ['@flow:backoffice-peluch-color-photo-delete', '@module:backoffice', '@priority:P2', '@outcome:failure'] },
+      async ({ page }) => {
+        const captured = await setupForm(page, { reopenDraft: true, persistedPhotos: true, deleteResult });
+        const photos = page.getByTestId('peluch-color-photo');
+        await expect(photos).toHaveCount(2);
+        await persistedPhoto(page, '/media/r3-color-1.png').getByTestId('peluch-color-photo-remove').click();
+
+        await expect(page.getByText(PHOTO_DELETE_ERROR, { exact: true })).toHaveText(PHOTO_DELETE_ERROR);
+        await expect(photos).toHaveCount(2);
+        await expect(persistedPhoto(page, '/media/r3-color-1.png').locator('img')).toHaveAttribute('src', '/media/r3-color-1.png');
+        await expect(persistedPhoto(page, '/media/r3-color-2.png').locator('img')).toHaveAttribute('src', '/media/r3-color-2.png');
+        expect(captured.deleted).toEqual([`/api/peluches/${DRAFT_SLUG}/color-image/rojo/501/`]);
+      },
+    );
+  }
+
+  // Bug caught: a bodyless 204 fails removal or clears sibling photos with the selected one.
+  test('removes only the selected persisted photo after a bodyless DELETE 204',
+    { tag: ['@flow:backoffice-peluch-color-photo-delete', '@module:backoffice', '@priority:P2', '@outcome:success'] },
+    async ({ page }) => {
+      const captured = await setupForm(page, { reopenDraft: true, persistedPhotos: true, deleteResult: 204 });
+      const photos = page.getByTestId('peluch-color-photo');
+      await expect(photos).toHaveCount(2);
+      await expect(persistedPhoto(page, '/media/r3-color-1.png').locator('img')).toHaveAttribute('src', '/media/r3-color-1.png');
+      await persistedPhoto(page, '/media/r3-color-1.png').getByTestId('peluch-color-photo-remove').click();
+
+      await expect(photos).toHaveCount(1);
+      await expect(photos.locator('img')).toHaveAttribute('src', '/media/r3-color-2.png');
+      await expect(page.getByText(PHOTO_DELETE_ERROR, { exact: true })).toHaveCount(0);
+      expect(captured.deleted).toEqual([`/api/peluches/${DRAFT_SLUG}/color-image/rojo/501/`]);
+    },
+  );
 });
