@@ -4,8 +4,74 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.7
-**Last Updated:** 2026-10-09
+**Version:** 1.5.8
+**Last Updated:** 2026-10-10
+
+
+## Revisión dirigida r2 — 2026-10-10
+
+La revisión de `e2e-user-flows-check` se limita al registro ante fallo de correo
+y al ciclo de borradores administrativos. El registro JSON es la referencia
+para IDs/outcomes. Esta sección describe el contrato aprobado; la QA del SHA
+combinado está **pendiente**. No acredita ejecución de los nuevos casos.
+
+### Roles y convenciones
+
+Invitado: registra su correo sin abrir sesión hasta verificarlo. Staff:
+crea, reabre, publica o descarta borradores. El cliente autenticado conserva
+las restricciones públicas: un borrador devuelve 404. Las pruebas usan tags
+`@flow` existentes y `@outcome` explícito; no se añaden IDs ni outcomes.
+APIClient prueba Django real con BD/medios aislados; Playwright prueba la UI
+real del SHA final con respuestas controladas en la frontera HTTP. Estas dos
+capas no equivalen a una integración navegador–Django.
+
+### Invitado — registro con correo pendiente
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Enviar formulario válido y confirmar envío | success | 201 para cuenta nueva o 200 para pendiente; aparece verificación, sin tokens. |
+| Enviar datos inválidos o repetir antes de un minuto | error | Error de validación o 429; conserva formulario y presupuesto. |
+| El transporte no confirma envío | failure | 503: «No pudimos confirmar el envío del código. Tu cuenta sigue pendiente de verificación. Espera al menos un minuto antes de volver a intentarlo.»; no afirma que envió el código. |
+| Consultar el formulario después de 503 | display | Datos conservados, error visible, botón disponible; el código de verificación no aparece. |
+
+Cuenta, código y presupuesto se conservan ante False; no se añade reintento
+SMTP automático. Pasado el límite vigente, el visitante puede repetir y
+avanzar a verificación si el envío se confirma. La verificación mantiene
+`new_password` elegida por el dueño del correo.
+
+### Staff — ciclo del borrador
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Primera foto, siguiente foto y guardar | success | Un único borrador inactivo; subidas posteriores y PATCH usan su slug; publica sólo según la casilla. |
+| Reabrir un borrador y guardar desmarcado | success | Detalle accesible a staff; casilla desmarcada y PATCH con false. |
+| Cancelar y confirmar descarte | success | DELETE elimina el inactivo; vuelve al listado. |
+| Intentar subir antes de título/categoría | error | Mensaje de validación; no crea borrador. |
+| API rechaza creación o subida | failure | Imagen fallida/reintentable y guardado bloqueado mientras haya trabajo pendiente. |
+| Abrir borrador existente | display | La casilla refleja false; el fallback true sólo conserva compatibilidad con DTO antiguo sin campo. |
+
+Invitados/clientes no acceden al detalle del borrador ni pueden cambiarlo:
+404 sin mutación. Activos mantienen GET público y escritura sólo de staff.
+La exposición de `is_active` en el detalle es administrativa. Permisos,
+persistencia real y foto multipart se verifican en APIClient; la casilla,
+navegación, payload y estados de imagen se verifican también en UI.
+
+### E2E Coverage Index — alcance r2
+
+| IDs existentes | Spec dueño | Estado de aceptación |
+|---|---|---|
+| `auth-sign-up-form` | `frontend/e2e/auth/auth.spec.ts` | Pendiente: 503 → error/formulario, 429 inmediato, recuperación después de un minuto. |
+| `backoffice-peluch-create-draft-on-color-upload`, `backoffice-peluch-create-cancel-discards-draft`, `backoffice-peluch-edit` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Pendiente: continuar, guardar, descartar y reabrir con publicación desmarcada. |
+
+Audit estático de esta rama documental: signup es partial (failure sin
+crédito); edit es partial (error/failure sin crédito); creación/descarte
+reciben crédito de los mocks antiguos. Esos estados no acreditan aceptación
+de los escenarios nuevos ni persistencia del backend. Freshness dio exit 0.
+
+Las cuatro clases ya estaban declaradas para signup/creación; no se inventan
+outcomes faltantes ni se acreditan nuevos casos antes de ejecutarlos. Los gaps
+anteriores fuera de estos flujos se conservan. El rechazo adversarial de
+multipart pertenece a integración backend, no a un nuevo flujo de navegador.
 
 ---
 
