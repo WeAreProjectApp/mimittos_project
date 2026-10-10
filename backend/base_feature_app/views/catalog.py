@@ -315,11 +315,13 @@ def peluches(request):
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([AllowAny])
 def peluch_detail(request, slug: str):
+    is_admin = request.user.is_authenticated and request.user.is_staff
+    visible_peluches = Peluch.objects.all() if is_admin else Peluch.objects.filter(is_active=True)
     try:
-        peluch = Peluch.objects.prefetch_related(
+        peluch = visible_peluches.prefetch_related(
             'available_colors', 'size_prices__size', 'gallery__attachment_set', 'category',
             'color_images__color', 'color_images__attachment',
-        ).get(slug=slug, is_active=True)
+        ).get(slug=slug)
     except Peluch.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 

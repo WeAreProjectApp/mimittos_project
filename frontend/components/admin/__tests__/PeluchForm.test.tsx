@@ -255,6 +255,24 @@ describe('PeluchForm', () => {
     })
   })
 
+  it.each([
+    { name: 'inactive', isActive: false, expected: false },
+    { name: 'published', isActive: true, expected: true },
+    { name: 'legacy response without publication state', isActive: undefined, expected: true },
+  ])('preserves visibility when saving an $name product', async ({ isActive, expected }) => {
+    const existing = { ...mockExisting, is_active: isActive } as PeluchDetail
+    ;(peluchAdminService.update as jest.Mock).mockResolvedValue(existing)
+    render(<PeluchForm existing={existing} />)
+    const visibility = await screen.findByRole('checkbox', { name: 'Activo (visible en tienda)' })
+    await waitFor(() => expect(visibility).toHaveProperty('checked', expected))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(peluchAdminService.update).toHaveBeenCalledWith(
+      existing.slug, expect.objectContaining({ is_active: expected }),
+    ))
+  })
+
   it('coalesces concurrent first-upload calls into a single draft peluche create', async () => {
     ;(peluchService.getCategories as jest.Mock).mockResolvedValue([
       { id: 1, name: 'Ositos', slug: 'ositos', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null },

@@ -214,7 +214,7 @@ export function PeluchForm({ existing }: Props) {
           category: String(existing.category?.id ?? ''),
           lead_description: existing.lead_description,
           badge: existing.badge,
-          is_active: true,
+          is_active: existing.is_active ?? true,
           is_featured: existing.is_featured,
           has_huella: existing.has_huella,
           has_corazon: existing.has_corazon,
