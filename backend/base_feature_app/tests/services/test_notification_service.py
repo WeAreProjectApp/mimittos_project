@@ -29,10 +29,29 @@ def base_order(db):
         department='Antioquia',
         total_amount=120000,
         deposit_amount=60000,
+        amount_paid_now=60000,
         balance_amount=60000,
         tracking_number='',
         shipping_carrier='',
     )
+
+
+@pytest.fixture(params=[
+    (Order.PaymentMode.FULL, 154000, 0, 'Pago realizado', 'Pago realizado', '$154,000 COP'),
+    (Order.PaymentMode.DEPOSIT, 80000, 90000, 'Abono pagado', 'Abono', '$80,000 COP'),
+], ids=['full', 'deposit'])
+def paid_order(base_order, request):
+    mode, amount, balance, customer_label, admin_label, expected_amount = request.param
+    base_order.payment_mode = mode
+    base_order.total_amount = 160000
+    base_order.deposit_amount = 80000
+    base_order.shipping_amount = 10000
+    base_order.discount_amount = 16000
+    base_order.amount_paid_now = amount
+    base_order.balance_amount = balance
+    base_order.status = Order.Status.PAYMENT_CONFIRMED
+    base_order.save()
+    return base_order, customer_label, admin_label, expected_amount
 
 
 @pytest.fixture
@@ -52,6 +71,27 @@ def order_with_old_email(base_order):
 # ---------------------------------------------------------------------------
 # notify_order_confirmation
 # ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_confirmation_text_reports_paid_amount(paid_order, mailoutbox):
+    order, label, _admin_label, expected_amount = paid_order
+
+    NotificationService.notify_order_confirmation(order)
+
+    assert f'{label}: {expected_amount}' in mailoutbox[0].body
+    assert f'Saldo contraentrega: ${order.balance_amount:,} COP' in mailoutbox[0].body
+
+
+@pytest.mark.django_db
+def test_confirmation_html_reports_paid_amount(paid_order, mailoutbox):
+    order, label, _admin_label, expected_amount = paid_order
+
+    NotificationService.notify_order_confirmation(order)
+
+    html = mailoutbox[0].alternatives[0].content
+    assert re.search(rf'{re.escape(label)}.*?{re.escape(expected_amount)}', html, re.DOTALL)
+    assert re.search(rf'Saldo contraentrega.*?\${order.balance_amount:,} COP', html, re.DOTALL)
+
 
 @pytest.mark.django_db
 @patch('base_feature_app.services.notification_service.send_mail')
@@ -176,6 +216,27 @@ def test_notify_order_shipped_respects_cooldown(mock_mail, order_with_recent_ema
 # ---------------------------------------------------------------------------
 # notify_new_order_admin
 # ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+def test_admin_notification_text_reports_paid_amount(paid_order, mailoutbox):
+    order, _customer_label, label, expected_amount = paid_order
+
+    NotificationService.notify_new_order_admin(order)
+
+    assert f'{label}: {expected_amount}' in mailoutbox[0].body
+
+
+@pytest.mark.django_db
+@override_settings(ADMIN_EMAIL='admin@example.com')
+def test_admin_notification_html_reports_paid_amount(paid_order, mailoutbox):
+    order, _customer_label, label, expected_amount = paid_order
+
+    NotificationService.notify_new_order_admin(order)
+
+    html = mailoutbox[0].alternatives[0].content
+    assert re.search(rf'{re.escape(label)}.*?{re.escape(expected_amount)}', html, re.DOTALL)
+
 
 @pytest.mark.django_db
 @patch('base_feature_app.services.notification_service.send_mail')

@@ -36,6 +36,12 @@ def _money(value) -> str:
         return f'${value} COP'
 
 
+def _payment_summary(order: Order, *, deposit_label: str) -> tuple[str, str]:
+    """Describe the persisted payment without replacing it with the deposit quote."""
+    label = 'Pago realizado' if order.payment_mode == Order.PaymentMode.FULL else deposit_label
+    return label, _money(order.amount_paid_now)
+
+
 class NotificationService:
 
     @staticmethod
@@ -50,12 +56,13 @@ class NotificationService:
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
         tracking_url = OrderAccessService.tracking_url(order)
         register_url = f'{frontend_url}/auth/register'
+        payment_label, payment_amount = _payment_summary(order, deposit_label='Abono pagado')
 
         subject = f'¡Tu pedido {order.order_number} está confirmado! 🧸'
         body = (
             f'Hola {order.customer_name},\n\n'
             f'¡Tu pago fue procesado exitosamente! Tu pedido {order.order_number} está confirmado.\n\n'
-            f'Abono pagado: ${order.deposit_amount:,} COP\n'
+            f'{payment_label}: {payment_amount}\n'
             f'Saldo contraentrega: ${order.balance_amount:,} COP\n\n'
             f'Seguimiento de tu pedido:\n{tracking_url}\n\n'
         )
@@ -85,7 +92,7 @@ class NotificationService:
             )
         details = [
             {'label': 'Número de pedido', 'value': order.order_number},
-            {'label': 'Abono pagado', 'value': _money(order.deposit_amount)},
+            {'label': payment_label, 'value': payment_amount},
             {'label': 'Saldo contraentrega', 'value': _money(order.balance_amount)},
         ]
         html = render_email_html(
@@ -221,6 +228,7 @@ class NotificationService:
         admin_email = getattr(settings, 'ADMIN_EMAIL', '')
         if not admin_email:
             return False
+        payment_label, payment_amount = _payment_summary(order, deposit_label='Abono')
         subject = f'Nuevo pedido Peluchelandia — {order.order_number}'
         body = (
             f'Nuevo pedido recibido:\n\n'
@@ -228,7 +236,7 @@ class NotificationService:
             f'Cliente: {order.customer_name} ({order.customer_email})\n'
             f'Ciudad: {order.city}, {order.department}\n'
             f'Total: ${order.total_amount:,} COP\n'
-            f'Abono: ${order.deposit_amount:,} COP\n\n'
+            f'{payment_label}: {payment_amount}\n\n'
             f'Ingresa al panel para ver el detalle y comenzar producción.'
         )
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
@@ -243,7 +251,7 @@ class NotificationService:
                 {'label': 'Cliente', 'value': f'{order.customer_name} · {order.customer_email}'},
                 {'label': 'Ciudad', 'value': f'{order.city}, {order.department}'},
                 {'label': 'Total', 'value': _money(order.total_amount)},
-                {'label': 'Abono', 'value': _money(order.deposit_amount)},
+                {'label': payment_label, 'value': payment_amount},
             ],
             cta={'text': 'Abrir panel', 'url': f'{frontend_url}/backoffice/pedidos'},
             preheader=f'Nuevo pedido {order.order_number} listo para producción.',
