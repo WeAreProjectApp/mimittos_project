@@ -4,9 +4,11 @@
 
 Ronda `improvement-20261010-r3`, diagnóstico congelado en
 `7bd32780aadd2653117add509c261c62ef0debb4`, base `main`.
-La implementación y su aceptación combinada están pendientes. Este informe
-no acredita CI remoto, merge o despliegue. La evidencia de R2 es antecedente:
-no se reutiliza como ejecución de R3.
+Las tres correcciones están implementadas y commiteadas en las ramas de
+sus autores. La aceptación combinada sigue pendiente al redactar este
+snapshot; se acreditará en el manifest final y el cierre archivado de la
+ronda. Este informe no acredita CI remoto, merge o despliegue. La evidencia
+de R2 es antecedente: no se reutiliza como ejecución de R3.
 
 El cupo global de tres causas selecciona:
 
@@ -20,6 +22,23 @@ QA tiene ownership exclusivo de los dos specs E2E dirigidos, registro de
 flujos, mapa narrativo y este informe. No implementa aplicación ni amplía
 la selección a categorías. El conductor integra/publica; los autores dejan
 sus commits en sus propias ramas.
+
+## Implementación entregada por los autores
+
+| Frente | Commit | Pruebas de autoría comunicadas | PR |
+|---|---|---|---|
+| Seguridad | `e25b70afb4b192b8616cc095dec464b2ee7088cf` | 87 casos: 30 backend y 57 frontend. | [#113](https://github.com/gustavop-dev/mimittos_project/pull/113) |
+| Correos | `bfbf0d168cfd2fcef3782c67c5b893edebf09368` | 12 casos backend finales. | [#111](https://github.com/gustavop-dev/mimittos_project/pull/111) |
+| Fotos | `98fce72f8dc8298cd42ce9484505130f531db4cb` | 31 casos unit únicos. | [#112](https://github.com/gustavop-dev/mimittos_project/pull/112) |
+| QA | `0059f4efff990fef3b31299458d6d6b3ae08776f` | Siete casos E2E escritos; gate, auditoría de contenido y freshness aprobados; ejecución integrada pendiente. | [#114](https://github.com/gustavop-dev/mimittos_project/pull/114) |
+
+Estas verificaciones pertenecen a los SHA de autoría, no al futuro tren
+combinado. El conductor aprobó y commiteó en `improve/compartido-r3` la
+configuración `FRONTEND_URL=http://localhost:3001` para CI
+(`957f692f06fc475bea1bdb87ace1ff28b8c638a3`): el enlace emitido por Django
+Admin debe apuntar al puerto real de Playwright. Su beneficio es permitir
+verificación real del puente; impacto MEDIO, esfuerzo BAJO y riesgo BAJO.
+No introduce una cuarta causa ni cambia dependencias, locks o migraciones.
 
 ## Decisión de los seis frentes
 
@@ -112,10 +131,10 @@ no se reetiquetan resultados de otra ronda.
 2. Verificar las capas requeridas y el gate con artefactos nativos; registrar
    manifest para los tres IDs exactos. Un fix posterior requiere repetir las
    comprobaciones afectadas en el nuevo SHA.
-3. Fijar `FRONTEND_URL=http://localhost:3001` en el paso Playwright de CI:
-   el navegador usa 3001, pero el emisor Django tiene default 3000. Es
-   configuración global fuera del ownership QA y el enlace real no debe
-   reescribirse para esconder ese desacuerdo.
+3. Integrar la configuración global aprobada y commiteada por el conductor
+   en `957f692`: `FRONTEND_URL=http://localhost:3001` en Playwright CI.
+   Resuelve el desacuerdo entre el navegador en 3001 y el default 3000
+   del emisor; no se reescribe el enlace real para esconderlo.
 4. Completar publicación y cierre remoto por el conductor. Este snapshot no
    presume un CI futuro, merge o despliegue.
 
@@ -126,8 +145,9 @@ checkout GitHub y SQLite descartable existentes. Obtiene JWT de la API
 real, nunca los firma con una clave inferida ni los publica.
 
 Incidencia de runtime: Next dev añadió automáticamente su bloque de reglas
-a `frontend/CLAUDE.md`, fuera del ownership QA. No se incluye en autoría;
-se solicita restauración acotada al conductor después de detener el servidor.
+a `frontend/CLAUDE.md`, fuera del ownership QA. Tras detener el servidor,
+el conductor autorizó retirar exclusivamente ese bloque; quedó restaurado
+y el worktree QA limpio. No se incluyó el bloque en autoría.
 
 ## Autoría QA y auditoría de flujos
 
@@ -145,7 +165,9 @@ Ruff y ESLint externos verdes. Artefacto:
 `test-results/improvement-20261010-r3/qa-author-gate-final.json`.
 Este resultado no acredita runtime corregido; la aceptación integrada y
 la revisión independiente siguen pendientes. No hay solicitudes de
-cambios en dependencias, lockfiles, migraciones o configuración global.
+cambios en dependencias, lockfiles o migraciones. La única configuración
+global solicitada fue `FRONTEND_URL` para CI, ya aprobada y commiteada
+por el conductor; queda pendiente su aceptación en el tren combinado.
 
 Freshness del mapa actualizado: exit 0, artefacto
 `test-results/improvement-20261010-r3/qa-author-freshness-final.json`.
