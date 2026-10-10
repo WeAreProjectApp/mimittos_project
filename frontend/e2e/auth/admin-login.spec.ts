@@ -182,7 +182,7 @@ test.describe('Admin signed handoff — real ownership chain', () => {
         target.search = new URLSearchParams({ ...tokens, redirect: '/checkout' }).toString();
         location.assign(target.toString());
       }, attacker);
-      await expect(page.getByRole('alert')).toHaveText(BRIDGE_ERROR);
+      await expect(page.getByRole('main').getByRole('alert').filter({ hasText: BRIDGE_ERROR })).toHaveText(BRIDGE_ERROR);
       await expectBuyerCookies(page.context(), baseURL!, buyer);
       const order = await submitBuyerCheckout(page);
       await expectPrivateBuyerOrder(request, order, buyer);
@@ -197,7 +197,7 @@ test.describe('Admin signed handoff — real ownership chain', () => {
       const rejected = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin-login/handoff/' && response.request().method() === 'POST');
       await page.goto('/admin-login#handoff=not-a-signed-assertion');
       expect((await rejected).status()).toBe(403);
-      await expect(page.getByRole('alert')).toHaveText(BRIDGE_ERROR);
+      await expect(page.getByRole('main').getByRole('alert').filter({ hasText: BRIDGE_ERROR })).toHaveText(BRIDGE_ERROR);
       await expectBuyerCookies(page.context(), baseURL!, buyer);
       await page.getByRole('banner').getByRole('link', { name: 'Mis pedidos', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Hola, Compradora R3 ♡' })).toHaveText('Hola, Compradora R3 ♡');
