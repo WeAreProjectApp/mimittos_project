@@ -118,15 +118,63 @@ const mockExisting: PeluchDetail = {
   updated_at: '2026-04-01T00:00:00Z',
 }
 
+const photoDeletionError = 'No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.'
+const existingWithPhotos: PeluchDetail = {
+  ...mockExisting,
+  available_colors: [{
+    ...mockExisting.available_colors[0],
+    image_count: 2,
+    images: [{ id: 9, url: '/saved.jpg' }, { id: 10, url: '/other.jpg' }],
+  }],
+}
+
 describe('PeluchForm', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    ;(peluchAdminService.deleteColorImage as jest.Mock).mockReset()
     mockUseRouter.mockReturnValue({ push: jest.fn() })
     ;(peluchService.getCategories as jest.Mock).mockResolvedValue(mockCategories)
     ;(peluchService.getColors as jest.Mock).mockResolvedValue(mockColors)
     ;(peluchService.getSizes as jest.Mock).mockResolvedValue(mockSizes)
     global.URL.createObjectURL = jest.fn().mockReturnValue('blob:mock')
     global.URL.revokeObjectURL = jest.fn()
+  })
+
+  it.each([
+    ['404', { response: { status: 404 } }],
+    ['500', { response: { status: 500 } }],
+    ['network failure', new Error('Network Error')],
+  ])('reports an unconfirmed photo deletion after %s', async (_name, error) => {
+    ;(peluchAdminService.deleteColorImage as jest.Mock).mockRejectedValue(error)
+    render(<PeluchForm existing={existingWithPhotos} />)
+    const removeButtons = await screen.findAllByTestId('peluch-color-photo-remove')
+
+    await userEvent.click(removeButtons[0])
+
+    expect(await screen.findByText(photoDeletionError)).toBeVisible()
+    expect(screen.getAllByTestId('peluch-color-photo')).toHaveLength(2)
+    expect(screen.getAllByTestId('peluch-color-photo')[0].querySelector('img')).toHaveAttribute('src', '/saved.jpg')
+  })
+
+  it('recovers a failed photo deletion on the next confirmed attempt', async () => {
+    let finishDelete!: () => void
+    const pendingDelete = new Promise<void>((resolve) => { finishDelete = resolve })
+    ;(peluchAdminService.deleteColorImage as jest.Mock)
+      .mockRejectedValueOnce({ response: { status: 500 } })
+      .mockReturnValueOnce(pendingDelete)
+    render(<PeluchForm existing={existingWithPhotos} />)
+    const removeButtons = await screen.findAllByTestId('peluch-color-photo-remove')
+    await userEvent.click(removeButtons[0])
+    await screen.findByText(photoDeletionError)
+
+    await userEvent.click(screen.getAllByTestId('peluch-color-photo-remove')[0])
+
+    expect(screen.queryByText(photoDeletionError)).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('peluch-color-photo')).toHaveLength(2)
+    await act(async () => { finishDelete(); await pendingDelete })
+    await waitFor(() => expect(screen.getAllByTestId('peluch-color-photo')).toHaveLength(1))
+    expect(screen.getByTestId('peluch-color-photo').querySelector('img')).toHaveAttribute('src', '/other.jpg')
+    expect(screen.queryByText(photoDeletionError)).not.toBeInTheDocument()
   })
 
   it('renders "Crear peluche" submit button in create mode', async () => {

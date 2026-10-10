@@ -106,10 +106,8 @@ export function useColorImageUpload({ resolveUploadSlug, initialGallery }: UseCo
   const removeImage = useCallback(async (colorSlug: string, key: string) => {
     const item = (colorGallery[colorSlug] ?? []).find((it) => it.key === key)
     if (item?.id != null) {
-      try {
-        const slug = await resolveUploadSlug(colorSlug)
-        await peluchAdminService.deleteColorImage(slug, colorSlug, item.id)
-      } catch { /* the image stays out of the gallery regardless */ }
+      const slug = await resolveUploadSlug(colorSlug)
+      await peluchAdminService.deleteColorImage(slug, colorSlug, item.id)
     }
     if (item) {
       URL.revokeObjectURL(item.url)
