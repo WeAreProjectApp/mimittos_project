@@ -23,7 +23,7 @@ from .models import (
     Order, OrderItem, OrderStatusHistory, WompiTransaction,
     Review, SiteContent, PageView,
 )
-from .utils.auth_utils import generate_auth_tokens
+from .services.admin_login_service import AdminLoginService
 
 logger = logging.getLogger(__name__)
 
@@ -157,15 +157,10 @@ class BaseFeatureUserAdmin(UserAdmin):
             messages.error(request, _('Este usuario aún no ha verificado su correo.'))
             return HttpResponseRedirect(change_url)
 
-        tokens = generate_auth_tokens(target)
-        logger.info('admin %s logged in as user %s', request.user.email, target.email)
-
-        query = urlencode({
-            'access': tokens['access'],
-            'refresh': tokens['refresh'],
-            'redirect': '/',
-        })
-        return HttpResponseRedirect(f'{settings.FRONTEND_URL}/admin-login?{query}')
+        handoff = AdminLoginService.issue_handoff(request.user, target)
+        logger.info('admin %s issued login handoff for user %s', request.user.email, target.email)
+        fragment = urlencode({'handoff': handoff})
+        return HttpResponseRedirect(f'{settings.FRONTEND_URL}/admin-login#{fragment}')
 
 
 class PasswordCodeAdmin(admin.ModelAdmin):

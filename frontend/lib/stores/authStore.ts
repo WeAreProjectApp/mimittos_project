@@ -26,12 +26,14 @@ type AuthState = {
   signOut: () => void;
   syncFromCookies: () => void;
   restoreUser: () => Promise<void>;
+  exchangeAdminHandoff: (handoff: string, canCommit: () => boolean) => Promise<boolean>;
   sendPasswordResetCode: (email: string) => Promise<void>;
   resetPassword: (args: { email: string; code: string; new_password: string }) => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>((set, get) => {
   let restoreGeneration = 0;
+  let handoffOperation = 0;
   let pendingRestore: {
     sessionKey: string;
     generation: number;
@@ -53,6 +55,32 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const accessToken = getAccessToken();
       const refreshToken = getRefreshToken();
       set({ accessToken, refreshToken, isAuthenticated: Boolean(accessToken) });
+    },
+
+    exchangeAdminHandoff: async (handoff, canCommit) => {
+      const generation = restoreGeneration;
+      const operation = ++handoffOperation;
+      const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
+      // The public exchange must never refresh or attach the previous session.
+      const response = await fetch(`${baseUrl}/admin-login/handoff/`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handoff }), credentials: 'omit', cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('El enlace de acceso no es válido o ha expirado.');
+      const data = await response.json();
+      const user = data?.user;
+      if (typeof data?.access !== 'string' || !data.access ||
+          typeof data?.refresh !== 'string' || !data.refresh ||
+          !user || typeof user.id !== 'number' || typeof user.email !== 'string' ||
+          typeof user.first_name !== 'string' || typeof user.last_name !== 'string' ||
+          typeof user.role !== 'string' || typeof user.is_staff !== 'boolean') {
+        throw new Error('Respuesta de sesión inválida');
+      }
+      if (!canCommit() || generation !== restoreGeneration || operation !== handoffOperation) return false;
+      invalidateRestore();
+      setTokens({ access: data.access, refresh: data.refresh });
+      set({ accessToken: data.access, refreshToken: data.refresh, user, isAuthenticated: true });
+      return true;
     },
 
     signIn: async ({ email, password, captcha_token }) => {

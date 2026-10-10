@@ -123,7 +123,7 @@ describe('http service', () => {
 
     await import('../http');
 
-    const error = { response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } };
+    const error = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer expired' } }) };
 
     const result = await responseErrorInterceptor?.(error);
 
@@ -145,8 +145,8 @@ describe('http service', () => {
 
     await import('../http');
 
-    const errorOne = { response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } };
-    const errorTwo = { response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } };
+    const errorOne = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer expired' } }) };
+    const errorTwo = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer expired' } }) };
 
     const firstAttempt = responseErrorInterceptor?.(errorOne);
     const secondAttempt = responseErrorInterceptor?.(errorTwo);
@@ -166,7 +166,7 @@ describe('http service', () => {
 
     await import('../http');
 
-    const error = { response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } };
+    const error = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer expired' } }) };
 
     await expect(responseErrorInterceptor?.(error)).rejects.toBe(error);
     expect(mockSetTokens).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe('http service', () => {
 
     await import('../http');
 
-    const error = { response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } };
+    const error = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer expired' } }) };
 
     await expect(responseErrorInterceptor?.(error)).rejects.toBe(error);
     expect(mockClearTokens).toHaveBeenCalledTimes(1);
@@ -193,4 +193,101 @@ describe('http service', () => {
     await expect(responseErrorInterceptor?.(error)).rejects.toBe(error);
     expect(mockAxios.post).not.toHaveBeenCalled();
   });
+  describe('session boundary', () => {
+    function pendingRefresh() {
+      let resolve!: (value: { data: { access: string } }) => void;
+      let reject!: (reason: Error) => void;
+      const promise = new Promise<{ data: { access: string } }>((done, fail) => {
+        resolve = done;
+        reject = fail;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it('ignores a refresh result belonging to the previous session', async () => {
+      const pending = pendingRefresh();
+      mockGetRefreshToken.mockReturnValue('old-refresh');
+      mockAxios.post.mockReturnValueOnce(pending.promise);
+      await import('../http');
+      const config = requestInterceptor?.({ headers: { Authorization: 'Bearer old' } });
+      const error = { response: { status: 401 }, config };
+      const attempt = responseErrorInterceptor?.(error);
+      mockGetRefreshToken.mockReturnValue('new-refresh');
+      pending.resolve({ data: { access: 'old-rotated-access' } });
+      await expect(attempt).rejects.toBe(error);
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      expect(mockClearTokens).not.toHaveBeenCalled();
+      expect(apiInstance).not.toHaveBeenCalled();
+    });
+
+    it('preserves a new session when an old refresh fails', async () => {
+      const pending = pendingRefresh();
+      mockGetRefreshToken.mockReturnValue('old-refresh');
+      mockAxios.post.mockReturnValueOnce(pending.promise);
+      await import('../http');
+      const config = requestInterceptor?.({ headers: { Authorization: 'Bearer old' } });
+      const error = { response: { status: 401 }, config };
+      const attempt = responseErrorInterceptor?.(error);
+      mockGetRefreshToken.mockReturnValue('new-refresh');
+      pending.reject(new Error('revoked old refresh'));
+      await expect(attempt).rejects.toBe(error);
+      expect(mockClearTokens).not.toHaveBeenCalled();
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      expect(apiInstance).not.toHaveBeenCalled();
+    });
+
+    it('does not refresh a stale request under the new identity', async () => {
+      mockGetRefreshToken.mockReturnValue('old-refresh');
+      await import('../http');
+      const config = requestInterceptor?.({ headers: { Authorization: 'Bearer old' } });
+      mockGetRefreshToken.mockReturnValue('new-refresh');
+      const error = { response: { status: 401 }, config };
+      await expect(responseErrorInterceptor?.(error)).rejects.toBe(error);
+      expect(mockAxios.post).not.toHaveBeenCalled();
+      expect(mockClearTokens).not.toHaveBeenCalled();
+      expect(apiInstance).not.toHaveBeenCalled();
+    });
+
+    it('does not resurrect a signed-out session from a pending refresh', async () => {
+      const pending = pendingRefresh();
+      mockGetRefreshToken.mockReturnValue('old-refresh');
+      mockAxios.post.mockReturnValueOnce(pending.promise);
+      await import('../http');
+      const config = requestInterceptor?.({ headers: { Authorization: 'Bearer old' } });
+      const error = { response: { status: 401 }, config };
+      const attempt = responseErrorInterceptor?.(error);
+      mockGetRefreshToken.mockReturnValue(null);
+      pending.resolve({ data: { access: 'old-rotated-access' } });
+      await expect(attempt).rejects.toBe(error);
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      expect(apiInstance).not.toHaveBeenCalled();
+    });
+
+    it('starts a separate refresh for a newer session', async () => {
+      const oldPending = pendingRefresh();
+      const newPending = pendingRefresh();
+      mockGetRefreshToken.mockReturnValue('old-refresh');
+      mockAxios.post.mockReturnValueOnce(oldPending.promise).mockReturnValueOnce(newPending.promise);
+      apiInstance.mockResolvedValue('retried-new');
+      await import('../http');
+      const oldError = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer old' } }) };
+      const oldAttempt = responseErrorInterceptor?.(oldError);
+      mockGetRefreshToken.mockReturnValue('new-refresh');
+      const newError = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer new' } }) };
+      const newAttempt = responseErrorInterceptor?.(newError);
+      const oldRejected = expect(oldAttempt).rejects.toBe(oldError);
+      oldPending.resolve({ data: { access: 'old-result' } });
+      await oldRejected;
+      const sameSessionError = { response: { status: 401 }, config: requestInterceptor?.({ headers: { Authorization: 'Bearer new' } }) };
+      const sharedAttempt = responseErrorInterceptor?.(sameSessionError);
+      expect(mockAxios.post).toHaveBeenCalledTimes(2);
+      newPending.resolve({ data: { access: 'new-result' } });
+      await expect(newAttempt).resolves.toBe('retried-new');
+      await expect(sharedAttempt).resolves.toBe('retried-new');
+      expect(mockSetTokens).toHaveBeenCalledTimes(1);
+      expect(mockSetTokens).toHaveBeenCalledWith({ access: 'new-result', refresh: 'new-refresh' });
+      expect(apiInstance).toHaveBeenCalledTimes(2);
+    });
+  });
+
 });

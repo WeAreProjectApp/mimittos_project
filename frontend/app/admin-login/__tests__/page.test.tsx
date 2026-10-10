@@ -1,83 +1,95 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { render, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { useRouter } from 'next/navigation';
 
 import AdminLoginPage from '../page';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { setTokens } from '@/lib/services/tokens';
 import { useAuthStore } from '@/lib/stores/authStore';
 
-jest.mock('next/navigation', () => ({
-  useRouter: jest.fn(),
-  useSearchParams: jest.fn(),
-}));
+jest.mock('next/navigation', () => ({ useRouter: jest.fn() }));
+jest.mock('@/lib/stores/authStore', () => ({ useAuthStore: { getState: jest.fn() } }));
 
-jest.mock('@/lib/services/tokens', () => ({
-  setTokens: jest.fn(),
-}));
-
-jest.mock('@/lib/stores/authStore', () => ({
-  useAuthStore: {
-    getState: jest.fn(),
-  },
-}));
-
-const mockUseRouter = useRouter as unknown as jest.Mock;
-const mockUseSearchParams = useSearchParams as unknown as jest.Mock;
-const mockSetTokens = setTokens as jest.Mock;
+const replace = jest.fn();
+const exchange = jest.fn();
 const mockGetState = useAuthStore.getState as jest.Mock;
+
+function deferred() {
+  let resolve!: (value: boolean) => void;
+  const promise = new Promise<boolean>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 describe('AdminLoginPage', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockGetState.mockReturnValue({ restoreUser: jest.fn().mockResolvedValue(undefined) });
+    jest.resetAllMocks();
+    (useRouter as jest.Mock).mockReturnValue({ replace });
+    mockGetState.mockReturnValue({ exchangeAdminHandoff: exchange });
+    window.history.replaceState(null, '', '/admin-login');
   });
 
-  it('stores tokens, restores the user, and redirects to a safe target', async () => {
-    const replace = jest.fn();
-    const restoreUser = jest.fn().mockResolvedValue(undefined);
-    mockUseRouter.mockReturnValue({ replace });
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('access=a&refresh=r&redirect=/orders'));
-    mockGetState.mockReturnValue({ restoreUser });
-
+  it('rejects the legacy JWT link without attempting a session exchange', async () => {
+    window.history.replaceState(null, '', '/admin-login?access=a&refresh=r&redirect=/orders');
     render(<AdminLoginPage />);
-
-    await waitFor(() => expect(mockSetTokens).toHaveBeenCalledWith({ access: 'a', refresh: 'r' }));
-    expect(restoreUser).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith('/orders');
+    expect(exchange).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('El enlace de acceso no es válido');
+    expect(window.location.search).toBe('?redirect=%2Forders');
   });
 
-  it('redirects to sign-in when tokens are missing', async () => {
-    const replace = jest.fn();
-    mockUseRouter.mockReturnValue({ replace });
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('redirect=/orders'));
-
+  it('removes the sensitive fragment before the exchange finishes', () => {
+    window.history.replaceState(null, '', '/admin-login#handoff=signed-proof');
+    exchange.mockReturnValue(new Promise(() => {}));
     render(<AdminLoginPage />);
-
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/sign-in'));
-    expect(mockSetTokens).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+    expect(exchange).toHaveBeenCalledWith('signed-proof', expect.any(Function));
+    expect(screen.getByText('Iniciando sesión...')).toBeVisible();
   });
 
-  it('falls back to home when redirect is an external URL', async () => {
-    const replace = jest.fn();
-    const restoreUser = jest.fn().mockResolvedValue(undefined);
-    mockUseRouter.mockReturnValue({ replace });
-    mockUseSearchParams.mockReturnValue(new URLSearchParams(`access=a&refresh=r&redirect=${encodeURIComponent('https://evil.example.com')}`));
-    mockGetState.mockReturnValue({ restoreUser });
-
+  it('navigates home after an accepted handoff', async () => {
+    window.history.replaceState(null, '', '/admin-login?redirect=//evil.example#handoff=proof');
+    exchange.mockResolvedValue(true);
     render(<AdminLoginPage />);
-
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/'));
+    expect(replace).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to home when redirect is a protocol-relative URL', async () => {
-    const replace = jest.fn();
-    const restoreUser = jest.fn().mockResolvedValue(undefined);
-    mockUseRouter.mockReturnValue({ replace });
-    mockUseSearchParams.mockReturnValue(new URLSearchParams(`access=a&refresh=r&redirect=${encodeURIComponent('//evil.example.com')}`));
-    mockGetState.mockReturnValue({ restoreUser });
-
+  it('displays rejection without navigating away from the previous session', async () => {
+    window.history.replaceState(null, '', '/admin-login#handoff=rejected');
+    exchange.mockRejectedValue(new Error('Forbidden'));
     render(<AdminLoginPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('El enlace de acceso no es válido');
+    expect(replace).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/'));
+  it('shares a single exchange under StrictMode', async () => {
+    const pending = deferred();
+    window.history.replaceState(null, '', '/admin-login#handoff=proof');
+    exchange.mockReturnValue(pending.promise);
+    render(<StrictMode><AdminLoginPage /></StrictMode>);
+    expect(exchange).toHaveBeenCalledTimes(1);
+    expect(exchange.mock.calls[0][1]()).toBe(true);
+    await act(async () => { pending.resolve(true); });
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/');
+  });
+
+  it('withdraws permission to commit after unmount', async () => {
+    const pending = deferred();
+    window.history.replaceState(null, '', '/admin-login#handoff=proof');
+    exchange.mockReturnValue(pending.promise);
+    const view = render(<AdminLoginPage />);
+    const canCommit = exchange.mock.calls[0][1];
+    view.unmount();
+    expect(canCommit()).toBe(false);
+    await act(async () => { pending.resolve(false); });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('stays on the page when the session changed during exchange', async () => {
+    window.history.replaceState(null, '', '/admin-login#handoff=proof');
+    exchange.mockResolvedValue(false);
+    render(<AdminLoginPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('El enlace de acceso no es válido o ha expirado.');
+    expect(window.location.pathname).toBe('/admin-login');
+    expect(replace).not.toHaveBeenCalled();
   });
 });

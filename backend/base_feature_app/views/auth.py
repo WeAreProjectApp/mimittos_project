@@ -7,11 +7,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from base_feature_app.authentication import user_authentication_rule
+from base_feature_app.services.admin_login_service import AdminLoginService, InvalidAdminLoginHandoff
 from base_feature_app.models import PasswordCode
 from base_feature_app.models.password_code import PasswordCodeAttemptBudget
 from base_feature_app.utils.auth_utils import (
@@ -398,3 +399,18 @@ def validate_token(request):
             'is_staff': user.is_staff,
         }
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def admin_login_handoff(request):
+    handoff = request.data.get('handoff') if isinstance(request.data, dict) else None
+    error = {'detail': 'El enlace de acceso no es válido o ha expirado.'}
+    if not isinstance(handoff, str) or not handoff:
+        return Response(error, status=status.HTTP_400_BAD_REQUEST, headers={'Cache-Control': 'no-store'})
+    try:
+        tokens = AdminLoginService.redeem_handoff(handoff)
+    except InvalidAdminLoginHandoff:
+        return Response(error, status=status.HTTP_403_FORBIDDEN, headers={'Cache-Control': 'no-store'})
+    return Response(tokens, headers={'Cache-Control': 'no-store'})

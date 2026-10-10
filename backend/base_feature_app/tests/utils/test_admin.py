@@ -133,7 +133,7 @@ def test_user_admin_impersonate_link_renders_admin_url():
 @pytest.mark.django_db
 @override_settings(FRONTEND_URL='http://localhost:3000')
 def test_user_admin_login_as_redirects_to_frontend():
-    """login_as_user_view returns a 302 redirect to FRONTEND_URL with JWT tokens in query params."""
+    """Login-as redirects with a signed handoff instead of bearer tokens."""
     factory = RequestFactory()
     admin_user = User.objects.create_superuser(email='admin@example.com', password='pass1234')
     target_user = User.objects.create_user(email='target@example.com', password='pass1234')
@@ -144,10 +144,10 @@ def test_user_admin_login_as_redirects_to_frontend():
     response = admin.login_as_user_view(request, target_user.id)
 
     assert response.status_code == 302
-    assert response['Location'].startswith('http://localhost:3000/admin-login?')
-    assert 'access=' in response['Location']
-    assert 'refresh=' in response['Location']
-    assert 'redirect=%2F' in response['Location']
+    assert response['Location'].startswith('http://localhost:3000/admin-login#handoff=')
+    assert 'access=' not in response['Location']
+    assert 'refresh=' not in response['Location']
+    assert '?' not in response['Location']
 
 
 @pytest.mark.django_db
@@ -215,7 +215,7 @@ def test_user_admin_login_as_rejects_unverified_target():
     response = admin.login_as_user_view(request, target.id)
 
     assert response.status_code == 302
-    assert 'access=' not in response['Location']
+    assert 'handoff=' not in response['Location']
 
 
 @pytest.mark.django_db
@@ -241,5 +241,5 @@ def test_user_admin_login_as_blocks_ineligible_target(build_target):
     response = admin.login_as_user_view(request, target_user.id)
 
     assert response.status_code == 302
-    assert 'access=' not in response['Location']
+    assert 'handoff=' not in response['Location']
     assert f'/user/{target_user.id}/change/' in response['Location']
