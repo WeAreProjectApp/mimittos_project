@@ -98,21 +98,20 @@ test.describe('User Flows', () => {
 
     // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
     const peluchCards = page.locator('a[href^="/peluches/"]');
-    const count = await peluchCards.count();
+    await expect(peluchCards.first()).toBeVisible();
 
-    if (count > 0) {
-      // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
-      await peluchCards.first().click();
-      await waitForPageLoad(page);
+    // quality: allow-fragile-selector (peluch list links uniquely scoped by href pattern)
+    await peluchCards.first().click();
+    await expect(page).toHaveURL(/\/peluches\/[^/?]+/);
+    await waitForPageLoad(page);
 
-      await page.goBack();
-      await waitForPageLoad(page);
-      await expect(page).toHaveURL(/.*catalog/);
+    await page.goBack();
+    await waitForPageLoad(page);
+    await expect(page).toHaveURL(/\/catalog(?:\?.*)?$/);
 
-      await page.goBack();
-      await waitForPageLoad(page);
-      await expect(page).toHaveURL('/');
-    }
+    await page.goBack();
+    await waitForPageLoad(page);
+    await expect(page).toHaveURL('/');
   });
 
 });

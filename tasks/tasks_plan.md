@@ -12,13 +12,18 @@ description: Task backlog, feature completion status, known issues, and test cov
   confirmado (`I-S-271c810dfba7`, `I-M-92a9cae19e6f`, `I-O-ffdd56735eed`).
 - [x] Actualizar contratos dirigidos del registro y mapa sin nuevas rutas,
   flows ni ampliación de baseline.
-- [ ] Integrar aplicación/tests/documentación en un SHA limpio.
-- [ ] Ejecutar QA única: multipart real y controles de upload; permisos y
-  lifecycle real de borrador; 503/429/recuperación signup; estado del formulario
-  y E2E de ambos ámbitos. Máximo veinte casos por lote, tres comandos por ciclo
-  y dos specs E2E por llamada; ninguna suite completa local.
-- [ ] Asociar JUnit/Playwright JSON/gate al SHA exacto, distinguir evidencia de
-  autoría de aceptación combinada y verificar CI/publicación con el conductor.
+- [x] Integrar aplicación/tests/pin/documentación inicial: `160beb3bd70b1dd5b22c9a9b3d70def2464d1972`.
+- [x] Ejecutar 65 casos backend, 18 unit y gate estricto de seis archivos en
+  esa combinación; artefactos sin fallos/errores/skips.
+- [x] Completar E2E 19/19 y dictamen APPROVED de los tres candidatos en
+  `160beb3`; preservar el intento fallido del harness de cookies/hostname.
+- [x] Corregir únicamente el caso de retroceso que bloqueó CI: tarjeta visible,
+  llegada al detalle y dos destinos de back obligatorios; diff/AST/gate focal.
+- [ ] Integrar cierre documental y test corregido; fijar SHA final, ejecutar
+  retroceso con catálogo scratch útil y gate completo/freshness.
+- [ ] Terminar empaquetado de manifest exacto y comprobar CI/publicación del
+  nuevo HEAD con el conductor. Los 102 casos aprobados en `160beb3` no
+  acreditan automáticamente la nueva corrección ni el árbol final.
 
 APIClient usa scratch real y medios temporales; E2E usa UI real con frontera
 HTTP simulada. No afirmar integración navegador–Django ni monitoring vivo.

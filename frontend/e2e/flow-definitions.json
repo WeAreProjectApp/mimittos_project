@@ -36,7 +36,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User follows the home catalog link to /catalog and sees the offered products.",
+      "description": "User follows the home catalog link to /catalog and sees the offered products. Browser-back coverage requires a visible product card, reaching its detail URL before going back, then returning to catalog and home in order.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -798,7 +798,7 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff abre un peluche activo o borrador en /backoffice/peluches/[slug], conserva la casilla de publicación según is_active y guarda mediante PATCH /api/peluches/{slug}/. Guardar un borrador desmarcado no lo publica. El detalle de borradores permanece oculto para invitados y clientes.",
+      "description": "Staff abre un peluche activo o borrador en /backoffice/peluches/[slug], conserva la casilla de publicación según is_active y guarda mediante PATCH /api/peluches/{slug}/; al guardar vuelve al listado. Guardar un borrador desmarcado no lo publica. El detalle de borradores permanece oculto para invitados y clientes.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",
