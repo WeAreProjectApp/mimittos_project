@@ -135,4 +135,61 @@ test.describe('Authentication', () => {
     // After successful submission the app transitions to the email verification step
     await expect(page.getByPlaceholder('000000')).toBeVisible({ timeout: 10_000 });
   });
+
+  test('registration recovers from an unconfirmed email delivery', { tag: [...AUTH_SIGN_UP_FORM, '@outcome:failure'] }, async ({ page }) => {
+    const deliveryError = 'No pudimos confirmar el envío del código. Tu cuenta sigue pendiente de verificación. Espera al menos un minuto antes de volver a intentarlo.';
+    const limitError = 'Has alcanzado el límite de intentos o envíos. Inténtalo de nuevo más tarde.';
+    const signUpRequests: unknown[] = [];
+    await page.clock.install();
+    await page.route('**/api/google-captcha/site-key/', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ site_key: null }) })
+    );
+    await page.route('**/api/sign_up/', (route) => {
+      signUpRequests.push(route.request().postDataJSON());
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: deliveryError }) });
+    });
+
+    await page.goto('/sign-up');
+    await waitForPageLoad(page);
+    await page.getByPlaceholder('Sofía').fill('Ana');
+    await page.getByPlaceholder('Martínez').fill('García');
+    await page.getByPlaceholder('sofia@ejemplo.com').fill('delivery@example.com');
+    await page.getByPlaceholder('Mínimo 8 caracteres').fill('OwnerPassword123!');
+    await page.getByPlaceholder('Repite la contraseña').fill('OwnerPassword123!');
+    await page.getByTestId('signup-terms-toggle').click();
+    const submit = page.getByRole('button', { name: /Crear mi cuenta/i });
+
+    await submit.click();
+
+    await expect(page.getByText(deliveryError, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('registration-code-input')).toHaveCount(0);
+    await expect(page.getByPlaceholder('sofia@ejemplo.com')).toHaveValue('delivery@example.com');
+    await expect(submit).toBeEnabled();
+    expect(signUpRequests).toHaveLength(1);
+
+    await page.unroute('**/api/sign_up/');
+    await page.route('**/api/sign_up/', (route) => {
+      signUpRequests.push(route.request().postDataJSON());
+      return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: limitError }) });
+    });
+    await submit.click();
+    await expect(page.getByText(limitError, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('registration-code-input')).toHaveCount(0);
+    expect(signUpRequests).toHaveLength(2);
+
+    // The API boundary represents recovery after its unchanged 60-second limit;
+    // server-side budget enforcement is exercised by the isolated backend tests.
+    await page.clock.runFor(60_000);
+    await page.unroute('**/api/sign_up/');
+    await page.route('**/api/sign_up/', (route) => {
+      signUpRequests.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ email: 'delivery@example.com' }) });
+    });
+    await submit.click();
+
+    await expect(page.getByTestId('registration-code-input')).toBeVisible();
+    await expect(page.getByText(deliveryError, { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Reenviar en 60s', { exact: true })).toBeVisible();
+    expect(signUpRequests).toHaveLength(3);
+  });
 });

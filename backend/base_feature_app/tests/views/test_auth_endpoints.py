@@ -1,10 +1,12 @@
 """Verify authentication and account recovery API behavior."""
 
 from datetime import timedelta
+from smtplib import SMTPException
 from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
 from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
@@ -71,6 +73,118 @@ def test_sign_up_creates_user(mock_captcha, api_client):
     assert PasswordCode.objects.filter(
         user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False,
     ).count() == 1
+
+
+@pytest.fixture(params=[
+    pytest.param('unrelated@example.com', id='new-account'),
+    pytest.param('delivery@example.com', id='pending-account'),
+])
+def failed_registration_delivery(request, api_client, db):
+    """Fail at the SMTP boundary for a new account or a preregistered address."""
+    existing = get_user_model().objects.create_user(
+        email=request.param, password='InitialPassword123!', email_verified=False,
+    )
+    payload = {'email': 'delivery@example.com', 'password': 'InitialPassword123!'}
+    with patch('base_feature_app.utils.auth_utils.send_mail', wraps=send_mail,
+               side_effect=SMTPException('delivery acknowledgement unavailable')) as smtp:
+        response = api_client.post(reverse('sign_up'), payload, format='json')
+        yield response, payload, smtp, existing
+
+
+@pytest.mark.django_db
+def test_sign_up_reports_unconfirmed_email_delivery(failed_registration_delivery):
+    """A failed delivery acknowledgement must never advance registration as success."""
+    response, _, smtp, _ = failed_registration_delivery
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json() == {'error': (
+        'No pudimos confirmar el envío del código. Tu cuenta sigue pendiente de verificación. '
+        'Espera al menos un minuto antes de volver a intentarlo.'
+    )}
+    assert smtp.call_count == 1
+
+
+@pytest.mark.django_db
+def test_sign_up_preserves_pending_account_after_email_failure(failed_registration_delivery):
+    """Delivery failure must preserve the pending account instead of rolling it back."""
+    _, payload, _, existing = failed_registration_delivery
+
+    user = get_user_model().objects.get(email=payload['email'])
+    existing.refresh_from_db()
+    assert user.is_active is True
+    assert user.email_verified is False
+    assert user.check_password('InitialPassword123!') is True
+    assert existing.check_password('InitialPassword123!') is True
+    budget = PasswordCodeAttemptBudget.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION)
+    assert budget.send_count == 1
+    assert budget.last_sent_at is not None
+
+
+@pytest.mark.django_db
+def test_registration_code_remains_usable_after_email_failure(api_client, failed_registration_delivery):
+    """An uncertain delivery may have arrived, so its code must still verify the owner."""
+    _, payload, _, _ = failed_registration_delivery
+    user = get_user_model().objects.get(email=payload['email'])
+    code = PasswordCode.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False)
+
+    response = api_client.post(reverse('verify_registration'), {
+        'email': user.email, 'code': code.code, 'new_password': 'OwnerPassword123!',
+    }, format='json')
+
+    user.refresh_from_db()
+    code.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()['access']
+    assert user.email_verified is True
+    assert user.check_password('OwnerPassword123!') is True
+    assert user.check_password('InitialPassword123!') is False
+    assert code.used is True
+
+
+@pytest.mark.django_db
+def test_sign_up_enforces_cooldown_after_email_failure(api_client, failed_registration_delivery):
+    """Failed acknowledgement still consumes the send attempt and prevents rapid repeats."""
+    _, payload, smtp, _ = failed_registration_delivery
+    user = get_user_model().objects.get(email=payload['email'])
+    code = PasswordCode.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False)
+
+    response = api_client.post(reverse('sign_up'), payload, format='json')
+
+    code.refresh_from_db()
+    assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert response.json()['error']
+    assert smtp.call_count == 1
+    assert PasswordCode.objects.filter(user=user, purpose=PasswordCode.Purpose.REGISTRATION).count() == 1
+    assert code.is_valid() is True
+    assert PasswordCodeAttemptBudget.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION).send_count == 1
+
+
+@pytest.mark.django_db
+def test_sign_up_recovers_after_email_failure(api_client, failed_registration_delivery, mailoutbox):
+    """A manual retry after the cooldown delivers a new code using the existing budget."""
+    _, payload, smtp, _ = failed_registration_delivery
+    user = get_user_model().objects.get(email=payload['email'])
+    previous = PasswordCode.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False)
+    budget = PasswordCodeAttemptBudget.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION)
+    smtp.side_effect = None
+
+    with freeze_time(budget.last_sent_at + timedelta(seconds=60)):
+        response = api_client.post(reverse('sign_up'), payload, format='json')
+
+    previous.refresh_from_db()
+    user.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        'detail': 'Ya existe una cuenta pendiente de verificación. Te reenviamos el código a tu correo.',
+        'email': payload['email'],
+    }
+    assert user.email_verified is False
+    assert user.check_password('InitialPassword123!') is True
+    assert previous.used is True
+    assert PasswordCode.objects.filter(user=user, purpose=PasswordCode.Purpose.REGISTRATION, used=False).count() == 1
+    assert PasswordCodeAttemptBudget.objects.get(user=user, purpose=PasswordCode.Purpose.REGISTRATION).send_count == 2
+    assert smtp.call_count == 2
+    assert len(mailoutbox) == 1
 
 
 @pytest.mark.django_db
