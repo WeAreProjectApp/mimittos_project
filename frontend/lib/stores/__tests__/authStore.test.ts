@@ -573,3 +573,133 @@ describe('authStore', () => {
     });
   });
 });
+
+describe('admin handoff', () => {
+  const mockFetch = jest.fn();
+  const previousAuth = {
+    accessToken: 'old-access', refreshToken: 'old-refresh', user: restoredUser, isAuthenticated: true,
+  };
+  const envelope = { access: 'handoff-access', refresh: 'handoff-refresh', user: verifiedUser };
+  const acceptedResponse = () => ({ ok: true, json: async () => envelope });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFetch.mockReset();
+    global.fetch = mockFetch;
+    useAuthStore.setState(previousAuth);
+    mockGetAccessToken.mockReturnValue('old-access');
+    mockGetRefreshToken.mockReturnValue('old-refresh');
+  });
+
+  it('accepts a customer handoff through an unauthenticated request', async () => {
+    mockFetch.mockResolvedValueOnce(acceptedResponse());
+    const accepted = await useAuthStore.getState().exchangeAdminHandoff('assertion', () => true);
+    expect(accepted).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith('/api/admin-login/handoff/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handoff: 'assertion' }), credentials: 'omit', cache: 'no-store',
+    });
+    expect(mockSetTokens).toHaveBeenCalledWith({ access: envelope.access, refresh: envelope.refresh });
+    expect(currentAuth()).toEqual({
+      accessToken: envelope.access, refreshToken: envelope.refresh, user: verifiedUser, isAuthenticated: true,
+    });
+    expect(mockApi.get).not.toHaveBeenCalled();
+    expect(mockApi.post).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403])('preserves the previous session on HTTP %i', async (status) => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status });
+    await expect(useAuthStore.getState().exchangeAdminHandoff('bad', () => true)).rejects.toThrow();
+    expect(currentAuth()).toEqual(previousAuth);
+    expect(mockSetTokens).not.toHaveBeenCalled();
+    expect(mockClearTokens).not.toHaveBeenCalled();
+    expect(mockApi.post).not.toHaveBeenCalled();
+  });
+
+  it('preserves the previous session on a network error', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('offline'));
+    await expect(useAuthStore.getState().exchangeAdminHandoff('proof', () => true)).rejects.toThrow('offline');
+    expect(currentAuth()).toEqual(previousAuth);
+    expect(mockSetTokens).not.toHaveBeenCalled();
+    expect(mockClearTokens).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incomplete success envelope before replacing cookies', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ...envelope, user: null }) });
+    await expect(useAuthStore.getState().exchangeAdminHandoff('proof', () => true)).rejects.toThrow();
+    expect(currentAuth()).toEqual(previousAuth);
+    expect(mockSetTokens).not.toHaveBeenCalled();
+    expect(mockClearTokens).not.toHaveBeenCalled();
+  });
+
+  it('retains the session when the accepting page unmounted', async () => {
+    mockFetch.mockResolvedValueOnce(acceptedResponse());
+    const accepted = await useAuthStore.getState().exchangeAdminHandoff('proof', () => false);
+    expect(accepted).toBe(false);
+    expect(currentAuth()).toEqual(previousAuth);
+    expect(mockSetTokens).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale restoration after accepting the handoff', async () => {
+    const pending = createDeferred<{ data: { valid: boolean; user: typeof restoredUser } }>();
+    mockApi.get.mockReturnValueOnce(pending.promise as never);
+    const restore = useAuthStore.getState().restoreUser();
+    await Promise.resolve();
+    mockFetch.mockResolvedValueOnce(acceptedResponse());
+    await useAuthStore.getState().exchangeAdminHandoff('proof', () => true);
+    pending.resolve({ data: { valid: true, user: restoredUser } });
+    await restore;
+    expect(currentAuth().user).toEqual(verifiedUser);
+    expect(currentAuth().refreshToken).toBe(envelope.refresh);
+  });
+
+  it('ignores a stale restoration error after accepting the handoff', async () => {
+    const pending = createDeferred<never>();
+    mockApi.get.mockReturnValueOnce(pending.promise as never);
+    const restore = useAuthStore.getState().restoreUser();
+    await Promise.resolve();
+    mockFetch.mockResolvedValueOnce(acceptedResponse());
+    await useAuthStore.getState().exchangeAdminHandoff('proof', () => true);
+    pending.reject(new Error('old session failed'));
+    await restore;
+    expect(currentAuth().user).toEqual(verifiedUser);
+    expect(mockClearTokens).not.toHaveBeenCalled();
+  });
+
+  it('does not install a pending handoff after sign out', async () => {
+    const pending = createDeferred<ReturnType<typeof acceptedResponse>>();
+    mockFetch.mockReturnValueOnce(pending.promise);
+    const exchange = useAuthStore.getState().exchangeAdminHandoff('proof', () => true);
+    useAuthStore.getState().signOut();
+    pending.resolve(acceptedResponse());
+    expect(await exchange).toBe(false);
+    expect(currentAuth()).toEqual({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
+    expect(mockSetTokens).not.toHaveBeenCalled();
+  });
+
+  it('does not replace a login completed after the handoff started', async () => {
+    const pending = createDeferred<ReturnType<typeof acceptedResponse>>();
+    mockFetch.mockReturnValueOnce(pending.promise);
+    const exchange = useAuthStore.getState().exchangeAdminHandoff('proof', () => true);
+    mockApi.post.mockResolvedValueOnce({ data: { access: 'new', refresh: 'new-refresh', user: signedInUser } });
+    mockGetAccessToken.mockReturnValue('new');
+    mockGetRefreshToken.mockReturnValue('new-refresh');
+    await useAuthStore.getState().signIn({ email: signedInUser.email, password: 'password' });
+    pending.resolve(acceptedResponse());
+    expect(await exchange).toBe(false);
+    expect(currentAuth().user).toEqual(signedInUser);
+    expect(currentAuth().refreshToken).toBe('new-refresh');
+    expect(mockSetTokens).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replace a newer handoff with an older response', async () => {
+    const pending = createDeferred<ReturnType<typeof acceptedResponse>>();
+    mockFetch.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(acceptedResponse());
+    const older = useAuthStore.getState().exchangeAdminHandoff('old-proof', () => true);
+    expect(await useAuthStore.getState().exchangeAdminHandoff('new-proof', () => true)).toBe(true);
+    pending.resolve({ ok: true, json: async () => ({ ...envelope, user: restoredUser }) });
+    expect(await older).toBe(false);
+    expect(currentAuth().user).toEqual(verifiedUser);
+    expect(mockSetTokens).toHaveBeenCalledTimes(1);
+  });
+});

@@ -2,6 +2,7 @@ from django.urls import path
 from base_feature_app.views import auth
 
 urlpatterns = [
+    path('admin-login/handoff/', auth.admin_login_handoff, name='admin_login_handoff'),
     path('sign_up/', auth.sign_up, name='sign_up'),
     path('verify_registration/', auth.verify_registration, name='verify_registration'),
     path('resend_verification/', auth.resend_verification, name='resend_verification'),
