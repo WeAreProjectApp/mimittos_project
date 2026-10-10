@@ -1647,7 +1647,7 @@ These flows were registered after the "incremental color image upload" feature w
 
 | Condition | Behavior |
 |-----------|----------|
-| Staff dismisses the confirmation | Form stays open; draft is NOT deleted |
+| Staff dismisses the confirmation | El borrador no se elimina; la interfaz vuelve al listado. El spec de descarte sólo verifica la confirmación aceptada y el retorno. |
 | No draft yet created (cancel before first color upload) | No DELETE is issued; user navigates away immediately |
 | DELETE fails | Error message shown; user may retry or stay on form |
 

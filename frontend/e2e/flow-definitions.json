@@ -1342,7 +1342,7 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Después de crear un borrador por la primera foto, staff pulsa Cancelar y confirma: DELETE /api/peluches/{slug}/ elimina el borrador inactivo y la interfaz regresa al listado. Si descarta la confirmación, conserva el formulario y el borrador.",
+      "description": "Después de crear un borrador por la primera foto, staff pulsa Cancelar y confirma: DELETE /api/peluches/{slug}/ elimina el borrador inactivo y la interfaz regresa al listado. Si rechaza la confirmación, conserva el borrador y vuelve al listado.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
