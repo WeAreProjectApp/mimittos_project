@@ -4,9 +4,47 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.10
+**Version:** 1.5.11
 **Last Updated:** 2026-10-10
 
+## Revisión dirigida r4 — 2026-10-10
+
+La revisión de `e2e-user-flows-check` contrasta exclusivamente el descarte de
+borrador y la precedencia de solicitudes del dashboard con la aplicación de
+Observabilidad `c2c097d389e75d1b82c839dc58991829f4f2dfc3`. Conserva los IDs:
+el descarte añade `failure`; el filtro conserva únicamente `success`, incluido
+su fallback silencioso. El registro 1.5.11 no amplía categorías, retirada de
+color completo ni los 32 flujos parciales históricos.
+
+### Personal administrativo — matriz de los dos flujos
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Confirmar descarte del borrador y recibir DELETE 204 | success | La interfaz vuelve a `/backoffice/peluches`. |
+| Confirmar descarte y recibir HTTP 200, 404, 500 o desconexión | failure | Conserva URL, título, categoría y foto; muestra «No pudimos confirmar la eliminación del borrador. Intenta de nuevo.» y permite reintentar hasta recibir 204. |
+| Declinar la confirmación del descarte | success | Vuelve al listado conservando el borrador, sin emitir DELETE. |
+| Validación propia del descarte | n/a | No existe un formulario de validación separado; la confirmación forma parte de la acción. |
+| Vista independiente del descarte | n/a | El formulario y la foto son precondiciones, no una vista nueva. |
+| Aplicar período B mientras A está pendiente y recibir B antes que A | success | Se conservan los 12 pedidos y $1.200.000 de B después de llegar A con 42 pedidos. |
+| Terminar A mientras B sigue pendiente | success | «Cargando analytics...» permanece hasta finalizar B; A no instala datos. |
+| Fallo de la solicitud vigente del dashboard | n/a como clase independiente | Fallback silencioso: termina carga y conserva el último resultado aceptado, o ausencia inicial. Se verifica en pruebas unitarias, sin crear aviso ni flujo nuevo. |
+| Validación o vista nueva del filtro | n/a | Las fechas y el resumen existentes son parte de Aplicar; no se modifica su UX. |
+
+### E2E Coverage Index — alcance r4
+
+| ID | Spec dueño | Casos dirigidos y estado |
+|---|---|---|
+| `backoffice-peluch-create-cancel-discards-draft` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Conserva éxito previo; cuatro casos nuevos de fallo seguido de reintento, independientes del DELETE de foto. Autoría pendiente de ejecución sobre el runtime combinado de r4. |
+| `backoffice-analytics-date-filter` | `frontend/e2e/backoffice/backoffice-analytics.spec.ts` | Conserva aplicación normal; dos casos nuevos con respuestas HTTP retenidas comprueban datos y carga después de ambas respuestas. Autoría pendiente de ejecución sobre el runtime combinado de r4. |
+
+La corrección del enlace de correo se comprueba mediante `mailoutbox` en backend;
+la navegación a su destino reutiliza el caso de registro de
+`frontend/e2e/auth/auth.spec.ts` sin modificarlo. Las pruebas con frontera HTTP
+simulada acreditan comportamiento visible del widget, no persistencia de Django.
+La autoría y el crédito estático no reemplazan ejecución; el conductor asociará
+los artefactos nativos al SHA combinado probado, sin atribuirle ejecuciones de r3.
+
+---
 
 ## Revisión dirigida r3 — 2026-10-10
 
@@ -1487,9 +1525,9 @@ At the compact viewport (412×915) the user types the huella name and the coraz�
 | **Priority** | P3 |
 | **Roles** | staff |
 | **Frontend route** | `/backoffice` |
-| **API endpoints** | `GET /api/analytics/dashboard/?from=<date>&to=<date>` |
+| **API endpoints** | `GET /api/analytics/dashboard/?date_from=<date>&date_to=<date>` |
 
-Staff sets the `dateFrom` and `dateTo` inputs at the top of the analytics dashboard and clicks **Aplicar**. `analyticsAdminService.getDashboard(from, to)` re-fetches all KPI widgets and charts (orders trend, customers, devices, top peluches, traffic sources) for the new range.
+Staff selecciona `dateFrom` y `dateTo` y pulsa **Aplicar**. `analyticsAdminService.getDashboard` envía `date_from` y `date_to`. Sólo la invocación más reciente actualiza resumen, gráficos y carga, incluso si reaplica las mismas fechas; una respuesta anterior se ignora. Editar fechas sin aplicar no invalida la solicitud vigente. Si esta falla, termina la carga y conserva los últimos datos aceptados, o su ausencia si aún no hubo éxito, sin mensaje nuevo. KPIs y CSV conservan sus flujos independientes.
 
 ### backoffice-analytics-export-csv
 
@@ -1713,7 +1751,7 @@ These flows were registered after the "incremental color image upload" feature w
 2. A confirmation prompt appears asking whether to discard the draft.
 3. Staff confirms discarding.
 4. Frontend calls `DELETE /api/peluches/{slug}/` to remove the draft from the backend.
-5. User is navigated to `/backoffice/peluches`.
+5. Sólo una respuesta 204 permite navegar a `/backoffice/peluches`.
 
 **Branching conditions:**
 
@@ -1721,7 +1759,7 @@ These flows were registered after the "incremental color image upload" feature w
 |-----------|----------|
 | Staff dismisses the confirmation | El borrador no se elimina; la interfaz vuelve al listado. El spec de descarte sólo verifica la confirmación aceptada y el retorno. |
 | No draft yet created (cancel before first color upload) | No DELETE is issued; user navigates away immediately |
-| DELETE fails | Error message shown; user may retry or stay on form |
+| DELETE no confirma 204: HTTP 200, 404, 500 o desconexión | Permanece en el formulario con título, categoría y fotografía; muestra «No pudimos confirmar la eliminación del borrador. Intenta de nuevo.» y permite reintentar. Sólo un 204 posterior vuelve al listado. |
 
 ---
 
