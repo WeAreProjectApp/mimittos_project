@@ -214,7 +214,7 @@ export function PeluchForm({ existing }: Props) {
           category: String(existing.category?.id ?? ''),
           lead_description: existing.lead_description,
           badge: existing.badge,
-          is_active: true,
+          is_active: existing.is_active ?? true,
           is_featured: existing.is_featured,
           has_huella: existing.has_huella,
           has_corazon: existing.has_corazon,
@@ -459,7 +459,7 @@ export function PeluchForm({ existing }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
           <div>
             <label style={L}>Categoría *</label>
-            <select value={form.category} onChange={f('category')} style={I} required>
+            <select data-testid="peluch-category-select" value={form.category} onChange={f('category')} style={I} required>
               <option value="">Seleccionar...</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -659,12 +659,13 @@ export function PeluchForm({ existing }: Props) {
                           </button>
                         )}
                         {img.status === 'done' && (
-                          <span style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(46,125,50,.9)', color: '#fff', borderRadius: 4, fontSize: 9, padding: '1px 4px' }}>✓</span>
+                          <span data-testid="peluch-color-photo-complete" style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(46,125,50,.9)', color: '#fff', borderRadius: 4, fontSize: 9, padding: '1px 4px' }}>✓</span>
                         )}
                         <button type="button" onClick={() => handleColorImageRemove(color.slug, img)} style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>×</button>
                       </div>
                     ))}
                     <button
+                      data-testid={`peluch-color-photo-add-${color.slug}`}
                       type="button"
                       onClick={() => openColorFileInput(color.slug)}
                       style={{ width: 90, height: 90, borderRadius: 8, border: '2px dashed rgba(212,132,138,.4)', background: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, color: 'var(--gray-warm)', fontSize: 11, fontFamily: 'inherit' }}
@@ -677,7 +678,7 @@ export function PeluchForm({ existing }: Props) {
               )
             })}
           </div>
-          <input ref={colorFileInputRef} type="file" accept="image/*" multiple hidden onChange={handleColorFileSelect} />
+          <input data-testid="peluch-color-photo-input" ref={colorFileInputRef} type="file" accept="image/*" multiple hidden onChange={handleColorFileSelect} />
         </Section>
       )}
 

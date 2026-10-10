@@ -5,6 +5,7 @@ import {
   BACKOFFICE_PELUCH_CREATE_DRAFT_ON_COLOR_UPLOAD,
   BACKOFFICE_PELUCH_COLOR_UPLOAD_PER_IMAGE_STATUS,
   BACKOFFICE_PELUCH_CREATE_CANCEL_DISCARDS_DRAFT,
+  BACKOFFICE_PELUCH_EDIT,
 } from '../helpers/flow-tags';
 
 /**
@@ -39,7 +40,7 @@ const PNG_1X1 = Buffer.from(
   'base64',
 );
 
-type Captured = { createBodies: unknown[]; deleted: string[] };
+type Captured = { createBodies: unknown[]; patchBodies: Record<string, unknown>[]; deleted: string[]; uploaded: number };
 
 async function setupStaffAuth(page: Page) {
   await page.route('**/api/validate_token/**', (route: Route) =>
@@ -62,10 +63,21 @@ async function setupStaffAuth(page: Page) {
  */
 async function setupForm(
   page: Page,
-  opts: { createStatus?: number; uploadStatus?: number } = {},
+  opts: { createStatus?: number; uploadStatus?: number; reopenDraft?: boolean } = {},
 ): Promise<Captured> {
-  const captured: Captured = { createBodies: [], deleted: [] };
+  const captured: Captured = { createBodies: [], patchBodies: [], deleted: [], uploaded: 0 };
   const { createStatus = 201, uploadStatus = 201 } = opts;
+  // This boundary fixture exercises the UI only. Django APIClient tests cover
+  // real persistence, multipart uploads and authorization independently.
+  let draftDetail = {
+    id: 1, title: 'Osito de prueba', slug: DRAFT_SLUG, is_active: false,
+    category: CATEGORIES[0], lead_description: 'Borrador pendiente',
+    badge: 'none', is_featured: false, discount_pct: 0, display_order: 100,
+    has_huella: false, has_corazon: false, has_audio: false,
+    huella_extra_cost: 0, corazon_extra_cost: 0, audio_extra_cost: 0,
+    description: [], specifications: {}, care_instructions: [], size_prices: [],
+    available_colors: [], gallery_urls: [],
+  };
 
   await setupStaffAuth(page);
   await page.route('**/api/categories/**', (route: Route) =>
@@ -73,6 +85,9 @@ async function setupForm(
   );
   await page.route('**/api/colors/**', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(COLORS) })
+  );
+  await page.route('**/api/sizes/**', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   );
 
   // ORDER MATTERS: Playwright resolves routes in reverse registration order, so
@@ -98,7 +113,13 @@ async function setupForm(
       return route.fulfill({ status: 204, body: '' });
     }
     if (method === 'PATCH') {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 1, slug: DRAFT_SLUG, is_active: false }) });
+      const body = req.postDataJSON() as Record<string, unknown>;
+      captured.patchBodies.push(body);
+      draftDetail = { ...draftDetail, ...body };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draftDetail) });
+    }
+    if (method === 'GET' && new URL(req.url()).pathname.endsWith(`/${DRAFT_SLUG}/`)) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draftDetail) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
@@ -107,6 +128,7 @@ async function setupForm(
   // Image upload: POST /peluches/<slug>/color-image/<colorSlug>/
   await page.route('**/api/peluches/*/color-image/**', (route: Route) => {
     if (uploadStatus >= 400) return route.fulfill({ status: uploadStatus, contentType: 'application/json', body: '{}' });
+    captured.uploaded += 1;
     return route.fulfill({
       status: uploadStatus,
       contentType: 'application/json',
@@ -114,7 +136,7 @@ async function setupForm(
     });
   });
 
-  await page.goto('/backoffice/peluches/nuevo');
+  await page.goto(opts.reopenDraft ? `/backoffice/peluches/${DRAFT_SLUG}` : '/backoffice/peluches/nuevo');
   await waitForPageLoad(page);
   return captured;
 }
@@ -122,7 +144,7 @@ async function setupForm(
 /** Title + category: the minimum the form demands before it will create a draft. */
 async function fillBasics(page: Page) {
   await page.getByPlaceholder('Osito Suave Premium').fill('Osito de prueba');
-  await page.getByRole('combobox').first().selectOption({ label: 'Clásicos' });
+  await page.getByTestId('peluch-category-select').selectOption({ label: 'Clásicos' });
 }
 
 async function selectRojo(page: Page) {
@@ -135,8 +157,8 @@ async function selectRojo(page: Page) {
  * the input without it uploads nowhere.
  */
 async function addPhotos(page: Page, count: number) {
-  await page.getByRole('button', { name: 'Foto' }).first().click();
-  await page.locator('input[type="file"]').setInputFiles(
+  await page.getByTestId('peluch-color-photo-add-rojo').click();
+  await page.getByTestId('peluch-color-photo-input').setInputFiles(
     Array.from({ length: count }, (_, i) => ({
       name: `foto-${i + 1}.png`,
       mimeType: 'image/png',
@@ -162,6 +184,41 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     await expect(page.getByText('✓')).toBeVisible();
     expect(captured.createBodies).toHaveLength(1);
     expect(captured.createBodies[0]).toMatchObject({ is_active: false, title: 'Osito de prueba' });
+  });
+
+  test('saving after two photo uploads publishes the draft', { tag: [...BACKOFFICE_PELUCH_CREATE_DRAFT_ON_COLOR_UPLOAD, '@outcome:success'] }, async ({ page }) => {
+    const captured = await setupForm(page);
+    await fillBasics(page);
+    await selectRojo(page);
+    await addPhotos(page, 1);
+    await expect(page.getByTestId('peluch-color-photo-complete')).toHaveCount(1);
+    await addPhotos(page, 1);
+    await expect(page.getByTestId('peluch-color-photo-complete')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Crear peluche' })).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Crear peluche' }).click();
+
+    await expect(page).toHaveURL(/\/backoffice\/peluches$/);
+    expect(captured.createBodies).toHaveLength(1);
+    expect(captured.uploaded).toBe(2);
+    expect(captured.patchBodies).toEqual([
+      { available_color_ids: [7] },
+      expect.objectContaining({ is_active: true, title: 'Osito de prueba' }),
+    ]);
+  });
+
+  test('saving a reopened draft leaves it unpublished', { tag: [...BACKOFFICE_PELUCH_EDIT, '@outcome:success'] }, async ({ page }) => {
+    const captured = await setupForm(page, { reopenDraft: true });
+    await expect(page.getByRole('checkbox', { name: 'Activo (visible en tienda)' })).not.toBeChecked();
+    await page.getByPlaceholder('Ej: El oso más suave para llevar tus recuerdos...').fill('Borrador revisado');
+
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+
+    await expect(page).toHaveURL(/\/backoffice\/peluches$/);
+    expect(captured.createBodies).toHaveLength(0);
+    expect(captured.patchBodies).toEqual([
+      expect.objectContaining({ is_active: false, lead_description: 'Borrador revisado' }),
+    ]);
   });
 
   test('uploading before title and category refuses and creates nothing', { tag: [...BACKOFFICE_PELUCH_CREATE_DRAFT_ON_COLOR_UPLOAD, '@outcome:error'] }, async ({ page }) => {

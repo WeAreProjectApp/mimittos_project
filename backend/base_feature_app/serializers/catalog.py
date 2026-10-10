@@ -205,12 +205,20 @@ class PeluchDetailSerializer(serializers.ModelSerializer):
     discounted_min_price = serializers.SerializerMethodField()
     gallery_urls = serializers.SerializerMethodField()
 
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not (user and user.is_authenticated and user.is_staff):
+            fields.pop('is_active')
+        return fields
+
     class Meta:
         model = Peluch
         fields = [
             'id', 'title', 'slug', 'category', 'category_name', 'category_slug',
             'lead_description', 'description', 'specifications', 'care_instructions',
-            'available_colors', 'size_prices', 'badge', 'is_featured',
+            'available_colors', 'size_prices', 'badge', 'is_featured', 'is_active',
             'discount_pct', 'display_order',
             'min_price', 'discounted_min_price',
             'average_rating', 'review_count', 'view_count',
