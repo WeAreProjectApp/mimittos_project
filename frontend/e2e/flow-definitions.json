@@ -339,10 +339,11 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "Submit button is disabled when checkout form is empty",
+      "description": "El checkout deshabilita el envío con carrito vacío; un rechazo de cantidad, producto, talla o color identifica la línea afectada, conserva el carrito y permite corregirla antes de reintentar.",
       "expectedSpecs": 1,
       "outcomes": [
-        "display"
+        "display",
+        "error"
       ]
     },
     "checkout-form-fill": {
@@ -365,7 +366,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "End-to-end: home → catalog → product detail → add to cart → checkout → fill form → submit enabled",
+      "description": "Inicio → catálogo → detalle → agregar → carrito → checkout: el producto elegido permanece en ambas pantallas y completar los campos obligatorios y términos habilita el envío, sin ejecutar el pago.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -628,7 +629,7 @@
         "guest"
       ],
       "priority": "P2",
-      "description": "Un código de registro válido y de un solo uso verifica el correo de una cuenta activa; conserva su estado administrativo y abre la sesión hacia pedidos.",
+      "description": "El visitante presenta código de registro y new_password válida; la verificación reemplaza la contraseña del pre-registro y abre la sesión hacia pedidos. Omitir o rechazar la contraseña no consume el código ni modifica la cuenta; se conservan bloqueo administrativo y consumo único.",
       "expectedSpecs": 1,
       "outcomes": [
         "success",

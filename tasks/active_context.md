@@ -5,6 +5,21 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Ronda transversal dirigida — 2026-10-10
+
+Tres causas aprobadas: la verificación de registro exige `new_password`
+válida y reemplaza la contraseña anterior sólo al consumir un código válido;
+checkout identifica rechazos de cantidad/disponibilidad por línea conservando
+el carrito; la compra completa E2E requiere todas las acciones de navegación
+y termina con el producto presente y el botón habilitado, antes del pago.
+
+Seguridad y mantenibilidad conservan propiedad exclusiva de sus pruebas;
+QA coordina mapas y una verificación final de la combinación limpia. No se
+modifican dependencias, migraciones ni el servicio desplegado. Pendientes:
+evidencia final ligada al SHA combinado, CI y entrega del orquestador. Wompi
+bancario sigue aplazado; catálogo necesita medición y formularios responsive
+quedan fuera del cupo. Reporte: `docs/audits/2026-10-10-mimittos-improvement-pass.md`.
+
 ## Ronda transversal r3 — 2026-10-09
 
 La ronda `improvement-09102026-r3` diagnosticó seis frentes sobre `origin/main`

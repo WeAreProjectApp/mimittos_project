@@ -206,11 +206,11 @@ Una cuenta activa y con correo verificado completa credenciales y CAPTCHA config
 
 **Roles:** guest. **Ruta:** `/sign-up` en el paso de verificación. **API:** `POST /api/verify_registration/`.
 
-1. El visitante introduce el código de registro recibido por correo.
-2. El servidor comprueba cuenta activa, correo pendiente, propósito `registration`, caducidad y uso previo bajo bloqueo transaccional.
-3. El éxito marca sólo el correo como verificado, consume el código, abre la sesión y muestra los pedidos.
+1. El visitante introduce el código de registro recibido por correo y elige su contraseña.
+2. El servidor exige `new_password` válida y comprueba cuenta activa, correo pendiente, propósito `registration`, caducidad y uso previo bajo bloqueo transaccional.
+3. El éxito reemplaza la contraseña del pre-registro, verifica el correo, consume el código, abre la sesión y muestra los pedidos. La contraseña anterior ya no permite entrar.
 
-Un código incorrecto, vencido, utilizado o de recuperación de contraseña rechaza la operación sin abrir sesión. Una cuenta bloqueada no se reactiva. Dos solicitudes simultáneas sólo pueden consumir el código una vez.
+Un código incorrecto, vencido, utilizado o de recuperación de contraseña rechaza la operación sin abrir sesión. Omitir la contraseña o enviar una que no cumple la validación no consume el código ni cambia la cuenta. Una cuenta bloqueada no se reactiva. Dos solicitudes simultáneas sólo pueden consumir el código una vez.
 
 ---
 
@@ -542,6 +542,7 @@ navigating to payment. Later private requests send it as `X-Order-Access`.
 | Created | Store capability, then navigate to `/payment?order=...` |
 | Inaccessible personalization | Identify the affected line, preserve cart and offer **Volver a personalizar** |
 | Reupload | Preserve product, size, color and quantity before resubmitting |
+| Rejected quantity, product, size or color | Identify the affected line and show its exact validation message; preserve cart for correction and retry |
 | Other API failure | Generic error; cart retained |
 
 ---
@@ -1742,3 +1743,25 @@ navigation without a residual overlay.
 Acceptance uses 412×915, 835×1194, 1195×835, 1440×900 and 2560×1440 plus rotation.
 This flow does not certify Escape handling, focus return or touch-target size;
 those accessibility obligations remain open outside the approved change.
+
+## Revisión dirigida — registro, checkout y compra (2026-10-10)
+
+Esta ronda revisa los tres contratos siguientes; no certifica las demás vistas.
+Conserva los outcomes y brechas anteriores de verificación y medios.
+
+| Flujo | Interacción y resultado observable | Clases revisadas | Evidencia E2E |
+|-------|-----------------------------------|------------------|---------------|
+| `auth-registration-verify` | Presentar código y contraseña elegida; enviar `email`, `code` y `new_password`; llegar a pedidos. El servidor sustituye la contraseña del pre-registro. | success; error y failure siguen requeridos | `frontend/e2e/auth/auth-verification.spec.ts` |
+| `checkout-form-validation` | Enviar carrito con dos variantes; rechazo indexado de cantidad o disponibilidad identifica la línea correcta y conserva el carrito para corregir/reintentar. Carrito vacío mantiene el envío deshabilitado. | display · error | `frontend/e2e/app/checkout.spec.ts` |
+| `purchase-complete-flow` | Inicio → Catálogo → detalle → agregar → Carrito → checkout; completar nombre, correo, celular, dirección y términos; conservar el producto y habilitar el envío. | success; errores de pedidos/pagos corresponden a sus flujos existentes | `frontend/e2e/app/complete-purchase.spec.ts` |
+
+La compra completa usa catálogo controlado y acciones obligatorias: si falta
+producto, navegación, formulario o carrito, el caso falla. Termina antes del
+pago. El rechazo de cantidad se acredita por la interacción real y el mensaje
+de la segunda línea; la verificación de contraseña atacante pertenece además
+a la API, pues un mock E2E no puede demostrar revocación de credenciales.
+
+Las declaraciones del registro se comprobaron con el audit estático, pero sus
+conteos no sustituyen ejecución en navegador. Casos antiguos condicionales de
+relleno/múltiples productos siguen fuera del crédito de esta ronda; no se
+cambian timestamps para presentar una revisión global.
