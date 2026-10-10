@@ -78,6 +78,39 @@ async function mockDashboardApis(page: Page) {
   })
 }
 
+function dashboardBarrier() {
+  let release!: () => void
+  const promise = new Promise<void>((resolveBarrier) => { release = resolveBarrier })
+  return { promise, release }
+}
+
+async function holdDashboardResponses(page: Page) {
+  const initial = { requested: dashboardBarrier(), response: dashboardBarrier() }
+  const applied = { requested: dashboardBarrier(), response: dashboardBarrier() }
+  await mockDashboardApis(page)
+  await page.route('**/api/analytics/dashboard/**', async (route: Route) => {
+    const url = new URL(route.request().url())
+    const filtered = url.searchParams.get('date_from') === DATE_FROM && url.searchParams.get('date_to') === DATE_TO
+    const held = filtered ? applied : initial
+    held.requested.release()
+    await held.response.promise
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(filtered ? dashboard(12, 1200000) : dashboard(42, 4200000)) })
+  })
+  async function releaseResponse(filtered: boolean) {
+    const response = page.waitForResponse((received) => {
+      const url = new URL(received.url())
+      const isFiltered = url.searchParams.get('date_from') === DATE_FROM && url.searchParams.get('date_to') === DATE_TO
+      return url.pathname === '/api/analytics/dashboard/' && isFiltered === filtered
+    })
+    const held = filtered ? applied : initial
+    held.response.release()
+    await (await response).finished()
+    // Let the delivered HTTP response commit in React before checking for a stale overwrite.
+    await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()))))
+  }
+  return { initial, applied, releaseResponse }
+}
+
 async function openDashboard(page: Page) {
   await page.goto('/backoffice')
   await waitForPageLoad(page)
@@ -137,6 +170,51 @@ test(
     await expect(page.getByText('Tendencia de pedidos', { exact: true })).toBeVisible()
     // quality: allow-fragile-selector (Recharts exposes its two rendered series only through .recharts-line-curve; URL and summary assertions remain the primary behavior proof.)
     await expect(page.locator('.recharts-line-curve')).toHaveCount(2)
+  },
+)
+
+// Bug caught: the initial response overwrites analytics from a newer applied period.
+test(
+  'keeps the latest applied analytics after an older response arrives',
+  { tag: [...BACKOFFICE_ANALYTICS_DATE_FILTER, '@outcome:success'] },
+  async ({ page }, testInfo) => {
+    await setupStaffAuth(page, testInfo)
+    const held = await holdDashboardResponses(page)
+    await page.goto('/backoffice')
+    await held.initial.requested.promise
+    await applyAprilRange(page)
+    await held.applied.requested.promise
+
+    await held.releaseResponse(true)
+    await expect(page.getByText('12 pedidos · $1.200.000 en abonos confirmados', { exact: true })).toHaveText('12 pedidos · $1.200.000 en abonos confirmados')
+    await held.releaseResponse(false)
+
+    await expect(page.getByText('12 pedidos · $1.200.000 en abonos confirmados', { exact: true })).toHaveText('12 pedidos · $1.200.000 en abonos confirmados')
+    await expect(page.getByText(/42 pedidos/)).toHaveCount(0)
+    await expect(page.getByTestId('date-from')).toHaveValue(DATE_FROM)
+    await expect(page.getByTestId('date-to')).toHaveValue(DATE_TO)
+  },
+)
+
+// Bug caught: an older completion hides loading while the applied request is pending.
+test(
+  'keeps loading until the latest applied analytics response finishes',
+  { tag: [...BACKOFFICE_ANALYTICS_DATE_FILTER, '@outcome:success'] },
+  async ({ page }, testInfo) => {
+    await setupStaffAuth(page, testInfo)
+    const held = await holdDashboardResponses(page)
+    await page.goto('/backoffice')
+    await held.initial.requested.promise
+    await applyAprilRange(page)
+    await held.applied.requested.promise
+
+    await held.releaseResponse(false)
+
+    await expect(page.getByText('Cargando analytics...', { exact: true })).toHaveText('Cargando analytics...')
+    await expect(page.getByText(/42 pedidos/)).toHaveCount(0)
+    await held.releaseResponse(true)
+    await expect(page.getByText('12 pedidos · $1.200.000 en abonos confirmados', { exact: true })).toHaveText('12 pedidos · $1.200.000 en abonos confirmados')
+    await expect(page.getByText('Cargando analytics...', { exact: true })).toHaveCount(0)
   },
 )
 

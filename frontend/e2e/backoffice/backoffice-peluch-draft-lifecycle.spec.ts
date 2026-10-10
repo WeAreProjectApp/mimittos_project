@@ -63,10 +63,11 @@ async function setupStaffAuth(page: Page) {
  */
 async function setupForm(
   page: Page,
-  opts: { createStatus?: number; uploadStatus?: number; reopenDraft?: boolean; persistedPhotos?: boolean; deleteResult?: number | 'network' } = {},
+  opts: { createStatus?: number; uploadStatus?: number; reopenDraft?: boolean; persistedPhotos?: boolean; deleteResult?: number | 'network'; draftDeleteResults?: (number | 'network')[] } = {},
 ): Promise<Captured> {
   const captured: Captured = { createBodies: [], patchBodies: [], deleted: [], uploaded: 0 };
   const { createStatus = 201, uploadStatus = 201 } = opts;
+  let draftDeleteAttempt = 0;
   // This boundary fixture exercises the UI only. Django APIClient tests cover
   // real persistence, multipart uploads and authorization independently.
   let draftDetail = {
@@ -110,7 +111,9 @@ async function setupForm(
     }
     if (method === 'DELETE') {
       captured.deleted.push(new URL(req.url()).pathname);
-      return route.fulfill({ status: 204, body: '' });
+      const result = opts.draftDeleteResults?.[draftDeleteAttempt++] ?? 204;
+      if (result === 'network') return route.abort('failed');
+      return route.fulfill({ status: result, body: '' });
     }
     if (method === 'PATCH') {
       const body = req.postDataJSON() as Record<string, unknown>;
@@ -328,6 +331,34 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     await expect(page).toHaveURL(/\/backoffice\/peluches$/);
     expect(captured.deleted).toContain(`/api/peluches/${DRAFT_SLUG}/`);
   });
+
+  for (const draftDeleteResult of [200, 404, 500, 'network'] as const) {
+    // Bug caught: an unconfirmed draft DELETE navigates away and loses the editable form.
+    test(`retries draft discard after unconfirmed DELETE ${draftDeleteResult}`,
+      { tag: [...BACKOFFICE_PELUCH_CREATE_CANCEL_DISCARDS_DRAFT, '@outcome:failure'] },
+      async ({ page }) => {
+        const captured = await setupForm(page, { draftDeleteResults: [draftDeleteResult, 204] });
+        await fillBasics(page);
+        await selectRojo(page);
+        await addPhotos(page, 1);
+        await page.getByTestId('peluch-color-photo-complete').waitFor({ state: 'visible' });
+        page.on('dialog', (dialog) => dialog.accept());
+
+        await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+
+        await expect(page.getByText('No pudimos confirmar la eliminación del borrador. Intenta de nuevo.', { exact: true })).toHaveText('No pudimos confirmar la eliminación del borrador. Intenta de nuevo.');
+        await expect(page).toHaveURL(/\/backoffice\/peluches\/nuevo$/);
+        await expect(page.getByPlaceholder('Osito Suave Premium')).toHaveValue('Osito de prueba');
+        await expect(page.getByTestId('peluch-category-select')).toHaveValue('1');
+        await expect(galleryImage(page)).toHaveAttribute('src', 'https://cdn.example.com/rojo-1.png');
+
+        await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
+
+        await expect(page).toHaveURL(/\/backoffice\/peluches$/);
+        expect(captured.deleted).toEqual([`/api/peluches/${DRAFT_SLUG}/`, `/api/peluches/${DRAFT_SLUG}/`]);
+      },
+    );
+  }
 });
 
 const persistedPhoto = (page: Page, url: string) => page.getByTestId('peluch-color-photo').filter({ has: page.locator(`img[src="${url}"]`) });

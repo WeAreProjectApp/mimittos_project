@@ -1,5 +1,5 @@
 {
-  "version": "1.5.10",
+  "version": "1.5.12",
   "lastUpdated": "2026-10-10",
   "flows": {
     "home-loads": {
@@ -1112,7 +1112,7 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff sets dateFrom/dateTo on /backoffice and clicks Aplicar; analyticsAdminService.getDashboard re-fetches and the KPI widgets and charts update for the new range",
+      "description": "Staff selecciona el período y pulsa Aplicar; GET /api/analytics/dashboard/ recibe date_from/date_to. Sólo la invocación más reciente puede actualizar el resumen, los gráficos y la carga, incluso al reaplicar el mismo período. Respuestas antiguas no sustituyen sus datos ni terminan su carga. Un error vigente termina la carga y conserva los últimos datos aceptados (o su ausencia), sin aviso visible; editar fechas sin Aplicar no invalida una solicitud. KPIs y CSV mantienen sus flujos independientes.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -1342,10 +1342,11 @@
         "staff"
       ],
       "priority": "P2",
-      "description": "Después de crear un borrador por la primera foto, staff pulsa Cancelar y confirma: DELETE /api/peluches/{slug}/ elimina el borrador inactivo y la interfaz regresa al listado. Si rechaza la confirmación, conserva el borrador y vuelve al listado.",
+      "description": "Después de crear un borrador por la primera foto, staff pulsa Cancelar y confirma: sólo DELETE /api/peluches/{slug}/ con respuesta 204 lleva al listado. HTTP 200, 404, 500 o desconexión conservan URL del formulario, título, categoría y foto, muestran «No pudimos confirmar la eliminación del borrador. Intenta de nuevo.» y permiten reintentar. Si rechaza la confirmación, conserva el borrador y vuelve al listado sin DELETE.",
       "expectedSpecs": 1,
       "outcomes": [
-        "success"
+        "success",
+        "failure"
       ]
     },
     "backoffice-peluch-list-draft-badge": {
