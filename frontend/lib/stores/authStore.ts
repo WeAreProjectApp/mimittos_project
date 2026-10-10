@@ -21,7 +21,7 @@ type AuthState = {
   isAuthenticated: boolean;
   signIn: (args: { email: string; password: string; captcha_token?: string }) => Promise<void>;
   signUp: (args: { email: string; password: string; first_name?: string; last_name?: string; captcha_token?: string }) => Promise<{ email: string }>;
-  verifyRegistration: (args: { email: string; code: string }) => Promise<void>;
+  verifyRegistration: (args: { email: string; code: string; new_password: string }) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   signOut: () => void;
   syncFromCookies: () => void;
@@ -82,8 +82,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
       return { email: response.data?.email ?? email };
     },
 
-    verifyRegistration: async ({ email, code }) => {
-      const response = await api.post('verify_registration/', { email, code });
+    verifyRegistration: async ({ email, code, new_password }) => {
+      const response = await api.post('verify_registration/', { email, code, new_password });
       const access = response.data?.access;
       const refresh = response.data?.refresh;
       const user = response.data?.user;

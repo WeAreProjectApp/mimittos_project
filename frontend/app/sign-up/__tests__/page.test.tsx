@@ -86,9 +86,10 @@ describe('SignUpPage', () => {
     expect(signUp).not.toHaveBeenCalled();
   });
 
-  it('signs up successfully and moves to verification step', async () => {
+  it('verifies registration with the password chosen in the form', async () => {
     const signUp = jest.fn().mockResolvedValue({ email: 'user@example.com' });
-    setAuthStoreState({ signUp, verifyRegistration: jest.fn(), resendVerification: jest.fn() });
+    const verifyRegistration = jest.fn().mockResolvedValue(undefined);
+    setAuthStoreState({ signUp, verifyRegistration, resendVerification: jest.fn() });
     const replace = jest.fn();
     mockUseRouter.mockReturnValue({ replace });
 
@@ -113,6 +114,13 @@ describe('SignUpPage', () => {
     });
 
     expect(await screen.findByPlaceholderText('000000')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /Activar mi cuenta/i }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/orders'));
+    expect(verifyRegistration).toHaveBeenCalledWith({
+      email: 'user@example.com', code: '123456', new_password: 'password123',
+    });
   });
 
   it('shows an error when sign up fails', async () => {

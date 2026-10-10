@@ -102,11 +102,20 @@ def sign_up(request):
 def verify_registration(request):
     email = request.data.get('email', '').strip().lower()
     code = request.data.get('code', '').strip()
+    new_password = request.data.get('new_password')
 
     if not email or not code:
         return Response(
             {'error': 'El correo y el código son obligatorios'},
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # The person proving email ownership chooses the credential. A password
+    # supplied before verification may belong to someone who preregistered it.
+    if not isinstance(new_password, str) or len(new_password) < 8:
+        return Response(
+            {'error': 'La contraseña debe tener al menos 8 caracteres'},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     with transaction.atomic():
@@ -138,8 +147,9 @@ def verify_registration(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        user.set_password(new_password)
         user.email_verified = True
-        user.save(update_fields=['email_verified'])
+        user.save(update_fields=['password', 'email_verified'])
 
         password_code.used = True
         password_code.save(update_fields=['used'])

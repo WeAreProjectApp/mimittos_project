@@ -204,11 +204,13 @@ def test_code_verification_accepts_last_permitted_attempt(api_client, pending_ac
 
     response = _verify_code(api_client, pending_account, route, code.code)
 
+    pending_account.refresh_from_db()
     code.refresh_from_db()
     budget = PasswordCodeAttemptBudget.objects.get(user=pending_account, purpose=purpose)
     assert attempts == [400] * 4
     assert response.status_code == 200
     assert code.used is True
+    assert pending_account.check_password('Replacement123!') is True
     assert budget.failed_attempts == 4
 
 
