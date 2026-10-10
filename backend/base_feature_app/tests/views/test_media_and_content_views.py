@@ -13,6 +13,7 @@ from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadedfile import InMemoryUploadedFile, SimpleUploadedFile
 from django.db import close_old_connections, connection
 from django.test import override_settings
+from django.test.client import encode_multipart
 from freezegun import freeze_time
 from PIL import Image as PILImage
 from rest_framework.test import APIClient
@@ -74,6 +75,83 @@ def hero_storage(tmp_path):
 def test_upload_media_returns_400_when_no_file_sent(api_client):
     response = api_client.post('/api/media/upload/', {'media_type': 'huella_image'})
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_upload_media_rejects_missing_file_with_separator_heavy_header(api_client, tmp_path):
+    """An adversarial quoted parameter must still reach a harmless missing-file rejection."""
+    content_type = 'multipart/form-data; boundary=r2; padding="' + ';' * 8000 + '"'
+    body = encode_multipart('r2', {'media_type': 'huella_image'})
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        existing = PersonalizationMedia.objects.create(
+            media_type=PersonalizationMedia.MediaType.HUELLA_IMAGE,
+            file=SimpleUploadedFile('existing.jpg', b'existing-file'),
+            file_size_kb=1,
+        )
+        original_name = existing.file.name
+        original_paths = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob('*'))
+
+        response = api_client.generic(
+            'POST', '/api/media/upload/', data=body, content_type=content_type,
+        )
+
+        assert response.status_code == 400
+        assert response.data == {'detail': 'No se envió ningún archivo.'}
+        assert PersonalizationMedia.objects.count() == 1
+        existing.refresh_from_db()
+        assert existing.file.name == original_name
+        with existing.file.open('rb') as saved:
+            assert saved.read() == b'existing-file'
+        assert sorted(path.relative_to(tmp_path) for path in tmp_path.rglob('*')) == original_paths
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(('content_type', 'filename'), [
+    pytest.param('multipart/form-data; boundary=r2', 'huella.jpg', id='ordinary-boundary'),
+    pytest.param('multipart/form-data; boundary="r2"', 'huella.jpg', id='quoted-boundary'),
+    pytest.param('multipart/form-data; boundary=r2', 'huella-niña-🐻.jpg', id='unicode-filename'),
+])
+def test_upload_media_accepts_raw_multipart_image(api_client, tmp_path, content_type, filename):
+    """Real uploads remain usable across header parsing and filename variants."""
+    body = encode_multipart('r2', {
+        'file': _make_real_image_upload(filename),
+        'media_type': 'huella_image',
+    })
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        response = api_client.generic(
+            'POST', '/api/media/upload/', data=body, content_type=content_type,
+        )
+
+        assert response.status_code == 201
+        media = PersonalizationMedia.objects.get(pk=response.data['media_id'])
+        with media.file.open('rb') as saved:
+            image = PILImage.open(saved)
+            image.load()
+            assert image.format == 'JPEG'
+            assert image.size == (60, 40)
+        assert signing.loads(response.data['media_token'], salt=MEDIA_ACCESS_SALT) == {
+            'media_id': media.pk,
+            'media_type': PersonalizationMedia.MediaType.HUELLA_IMAGE,
+        }
+        assert response.data['file_url'] == f'http://testserver/media/{media.file.name}'
+        assert PersonalizationMedia.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_upload_media_rejects_invalid_image_bytes(api_client, tmp_path):
+    upload = SimpleUploadedFile('invalid.jpg', b'not-an-image', content_type='image/jpeg')
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        response = api_client.post(
+            '/api/media/upload/', {'file': upload, 'media_type': 'huella_image'}, format='multipart',
+        )
+
+    assert response.status_code == 400
+    assert response.data == {'detail': 'El archivo no es una imagen válida.'}
+    assert PersonalizationMedia.objects.count() == 0
+    assert list(tmp_path.rglob('*')) == []
 
 
 @pytest.mark.django_db
