@@ -5,6 +5,22 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal dirigida — 2026-10-10
+
+- Corregir pre-registro: exigir contraseña nueva al verificar, invalidar la
+  contraseña anterior y conservar cuenta/código ante rechazos.
+- Mostrar rechazos de cantidad/disponibilidad en la línea correcta del
+  checkout, con carrito conservado y corrección/reintento disponibles.
+- Sustituir el caso P1 de compra que omitía acciones por un recorrido
+  determinista hasta checkout, sin pagar.
+- Cerrar con una QA de la combinación limpia, aislamiento de API/BD y
+  artefactos del SHA exacto; CI y entrega corresponden al orquestador.
+
+Los tres primeros puntos tienen autoría asignada; el estado de validación
+se registra en `docs/audits/2026-10-10-mimittos-improvement-pass.md`. No se
+reabre el carrito/rechazo pendiente reparado anteriormente. Polling Wompi,
+medición del catálogo y mejoras responsive siguen pendientes fuera del lote.
+
 ## Ronda transversal r3 — 2026-10-09
 
 Entregado en PRs por frente (seguridad, rendimiento, observabilidad,
