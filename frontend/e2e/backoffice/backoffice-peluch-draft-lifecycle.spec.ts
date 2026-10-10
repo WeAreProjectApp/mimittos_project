@@ -186,7 +186,7 @@ test.describe('Backoffice — draft peluch lifecycle', () => {
     expect(captured.createBodies[0]).toMatchObject({ is_active: false, title: 'Osito de prueba' });
   });
 
-  test('saving after a second photo batch publishes the draft', { tag: [...BACKOFFICE_PELUCH_CREATE_DRAFT_ON_COLOR_UPLOAD, '@outcome:success'] }, async ({ page }) => {
+  test('saving after two photo uploads publishes the draft', { tag: [...BACKOFFICE_PELUCH_CREATE_DRAFT_ON_COLOR_UPLOAD, '@outcome:success'] }, async ({ page }) => {
     const captured = await setupForm(page);
     await fillBasics(page);
     await selectRojo(page);
