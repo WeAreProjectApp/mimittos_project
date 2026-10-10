@@ -1,7 +1,11 @@
-import pytest
-from django_attachments.models import Library
+import io
 
-from base_feature_app.models import Category, GlobalColor, GlobalSize, Peluch
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django_attachments.models import Library
+from PIL import Image
+
+from base_feature_app.models import Category, GlobalColor, GlobalSize, Peluch, PeluchColorImage
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -215,3 +219,191 @@ def test_peluch_bulk_category_updates_peluches(admin_client, peluch, category, d
     assert response.status_code == 200
     peluch.refresh_from_db()
     assert peluch.category_id == new_cat.id
+
+
+@pytest.fixture
+def draft(peluch):
+    peluch.is_active = False
+    peluch.save(update_fields=['is_active'])
+    return peluch
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture,expected_status', [
+    ('admin_client', 200), ('authenticated_client', 404), ('api_client', 404),
+])
+def test_draft_detail_visibility(request, draft, client_fixture, expected_status):
+    client = request.getfixturevalue(client_fixture)
+
+    response = client.get(f'/api/peluches/{draft.slug}/')
+
+    assert response.status_code == expected_status
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture,expected_status,expected_description', [
+    ('admin_client', 200, 'Draft revised'),
+    ('authenticated_client', 404, 'Feroz'), ('api_client', 404, 'Feroz'),
+])
+def test_draft_detail_update_permission(request, draft, client_fixture, expected_status, expected_description):
+    client = request.getfixturevalue(client_fixture)
+
+    response = client.patch(f'/api/peluches/{draft.slug}/', {'lead_description': 'Draft revised'}, format='json')
+
+    assert response.status_code == expected_status
+    draft.refresh_from_db()
+    assert draft.lead_description == expected_description
+    assert draft.is_active is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture,expected_status,expected_exists', [
+    ('admin_client', 204, False), ('authenticated_client', 404, True), ('api_client', 404, True),
+])
+def test_draft_detail_delete_permission(request, draft, client_fixture, expected_status, expected_exists):
+    client = request.getfixturevalue(client_fixture)
+    draft_id = draft.pk
+
+    response = client.delete(f'/api/peluches/{draft.slug}/')
+
+    assert response.status_code == expected_status
+    assert Peluch.objects.filter(pk=draft_id).exists() is expected_exists
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture', ['api_client', 'authenticated_client'])
+def test_published_detail_keeps_public_response(request, peluch, client_fixture):
+    client = request.getfixturevalue(client_fixture)
+
+    response = client.get(f'/api/peluches/{peluch.slug}/')
+
+    assert response.status_code == 200
+    assert response.data['slug'] == peluch.slug
+    assert 'is_active' not in response.data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture,method', [
+    ('api_client', 'patch'), ('api_client', 'delete'),
+    ('authenticated_client', 'patch'), ('authenticated_client', 'delete'),
+])
+def test_published_detail_rejects_nonstaff_mutation(request, peluch, client_fixture, method):
+    client = request.getfixturevalue(client_fixture)
+
+    response = getattr(client, method)(f'/api/peluches/{peluch.slug}/', {'lead_description': 'Forbidden'}, format='json')
+
+    assert response.status_code == 403
+    peluch.refresh_from_db()
+    assert peluch.lead_description == 'Feroz'
+    assert peluch.is_active is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('method', ['get', 'patch', 'delete'])
+def test_staff_detail_missing_slug_returns_404(admin_client, method):
+    response = getattr(admin_client, method)('/api/peluches/missing-draft/')
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('is_active', [False, True])
+def test_staff_detail_reports_publication_state(admin_client, peluch, is_active):
+    peluch.is_active = is_active
+    peluch.save(update_fields=['is_active'])
+
+    response = admin_client.get(f'/api/peluches/{peluch.slug}/')
+
+    assert response.status_code == 200
+    assert response.data['is_active'] is is_active
+
+
+@pytest.mark.django_db
+def test_draft_detail_get_keeps_view_counter_increment(admin_client, draft):
+    before = draft.view_count
+
+    response = admin_client.get(f'/api/peluches/{draft.slug}/')
+
+    assert response.status_code == 200
+    draft.refresh_from_db()
+    assert draft.view_count == before + 1
+
+
+@pytest.fixture
+def isolated_catalog_media(settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path / 'catalog-media')
+
+
+def _create_photo_draft(admin_client, category, color):
+    response = admin_client.post('/api/peluches/', {
+        'title': 'Photo draft', 'slug': 'photo-draft', 'category': category.pk,
+        'lead_description': 'Waiting for publication', 'is_active': False,
+        'available_color_ids': [color.pk],
+    }, format='json')
+    assert response.status_code == 201
+    assert response.data['is_active'] is False
+    return Peluch.objects.get(slug=response.data['slug'])
+
+
+def _upload_draft_photo(admin_client, draft, color, filename):
+    content = io.BytesIO()
+    Image.new('RGB', (2, 2), 'red').save(content, format='PNG')
+    image = SimpleUploadedFile(filename, content.getvalue(), content_type='image/png')
+    response = admin_client.post(
+        f'/api/peluches/{draft.slug}/color-image/{color.slug}/',
+        {'image': image}, format='multipart',
+    )
+    assert response.status_code == 201
+    return response.data['id']
+
+
+@pytest.mark.django_db
+def test_photo_draft_can_publish_after_second_upload(admin_client, category, color, isolated_catalog_media):
+    draft = _create_photo_draft(admin_client, category, color)
+    first_id = _upload_draft_photo(admin_client, draft, color, 'first.png')
+    update = admin_client.patch(f'/api/peluches/{draft.slug}/', {
+        'available_color_ids': [color.pk],
+    }, format='json')
+    assert update.status_code == 200
+    assert update.data['is_active'] is False
+    second_id = _upload_draft_photo(admin_client, draft, color, 'second.png')
+
+    response = admin_client.patch(f'/api/peluches/{draft.slug}/', {'is_active': True}, format='json')
+
+    assert response.status_code == 200
+    assert response.data['is_active'] is True
+    draft.refresh_from_db()
+    assert draft.is_active is True
+    assert set(draft.color_images.values_list('pk', flat=True)) == {first_id, second_id}
+
+
+@pytest.mark.django_db
+def test_photo_draft_can_be_discarded(admin_client, category, color, isolated_catalog_media):
+    draft = _create_photo_draft(admin_client, category, color)
+    photo_id = _upload_draft_photo(admin_client, draft, color, 'discard.png')
+    draft_id = draft.pk
+
+    response = admin_client.delete(f'/api/peluches/{draft.slug}/')
+
+    assert response.status_code == 204
+    assert not Peluch.objects.filter(pk=draft_id).exists()
+    assert not PeluchColorImage.objects.filter(pk=photo_id).exists()
+
+
+@pytest.mark.django_db
+def test_photo_draft_edit_can_preserve_inactive_state(admin_client, category, color, isolated_catalog_media):
+    draft = _create_photo_draft(admin_client, category, color)
+    photo_id = _upload_draft_photo(admin_client, draft, color, 'retain.png')
+    detail = admin_client.get(f'/api/peluches/{draft.slug}/')
+    assert detail.status_code == 200
+    assert detail.data['is_active'] is False
+
+    response = admin_client.patch(f'/api/peluches/{draft.slug}/', {
+        'lead_description': 'Edited draft', 'is_active': detail.data['is_active'],
+    }, format='json')
+
+    assert response.status_code == 200
+    draft.refresh_from_db()
+    assert draft.is_active is False
+    assert draft.lead_description == 'Edited draft'
+    assert draft.color_images.get(pk=photo_id).peluch_id == draft.pk
