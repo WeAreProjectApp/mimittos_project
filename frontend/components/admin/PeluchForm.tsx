@@ -293,7 +293,12 @@ export function PeluchForm({ existing }: Props) {
   }
 
   async function handleColorImageRemove(colorSlug: string, item: ColorGalleryItem) {
-    await removeImage(colorSlug, item.key)
+    setError('')
+    try {
+      await removeImage(colorSlug, item.key)
+    } catch {
+      setError('No pudimos confirmar la eliminación de la imagen. Intenta de nuevo.')
+    }
   }
 
   async function handleAddColor() {
@@ -647,7 +652,7 @@ export function PeluchForm({ existing }: Props) {
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                     {images.map((img) => (
-                      <div key={img.key} style={{ position: 'relative', width: 90, height: 90, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${img.status === 'failed' ? '#E0A0A0' : 'rgba(27,42,74,.1)'}`, background: '#fff' }}>
+                      <div data-testid="peluch-color-photo" key={img.key} style={{ position: 'relative', width: 90, height: 90, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${img.status === 'failed' ? '#E0A0A0' : 'rgba(27,42,74,.1)'}`, background: '#fff' }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         {img.status === 'uploading' && (
@@ -661,7 +666,7 @@ export function PeluchForm({ existing }: Props) {
                         {img.status === 'done' && (
                           <span data-testid="peluch-color-photo-complete" style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(46,125,50,.9)', color: '#fff', borderRadius: 4, fontSize: 9, padding: '1px 4px' }}>✓</span>
                         )}
-                        <button type="button" onClick={() => handleColorImageRemove(color.slug, img)} style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>×</button>
+                        <button data-testid="peluch-color-photo-remove" type="button" onClick={() => handleColorImageRemove(color.slug, img)} style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>×</button>
                       </div>
                     ))}
                     <button
