@@ -10,10 +10,14 @@ Use this document to understand each flow's steps, branching conditions, role re
 
 ## Revisión dirigida r2 — 2026-10-10
 
-La revisión de `e2e-user-flows-check` se limita al registro ante fallo de correo
-y al ciclo de borradores administrativos. El registro JSON es la referencia
+La revisión de `e2e-user-flows-check` cubre registro ante fallo de correo
+y ciclo de borradores administrativos; el cierre incorpora únicamente el
+caso obligatorio de retroceso del navegador aprobado después del fallo CI. El registro JSON es la referencia
 para IDs/outcomes. Esta sección describe el contrato aprobado; la QA del SHA
-combinado está **pendiente**. No acredita ejecución de los nuevos casos.
+de aplicación sobre `160beb3bd70b1dd5b22c9a9b3d70def2464d1972` está
+**aprobada**: 65 backend, 18 unit y 19 E2E sin fallos/skips. La ejecución
+útil del caso de retroceso corregido y la aceptación del árbol final/CI
+siguen pendientes; no se extiende el veredicto a todo el mapa.
 
 ### Roles y convenciones
 
@@ -60,13 +64,32 @@ navegación, payload y estados de imagen se verifican también en UI.
 
 | IDs existentes | Spec dueño | Estado de aceptación |
 |---|---|---|
-| `auth-sign-up-form` | `frontend/e2e/auth/auth.spec.ts` | Pendiente: 503 → error/formulario, 429 inmediato, recuperación después de un minuto. |
-| `backoffice-peluch-create-draft-on-color-upload`, `backoffice-peluch-create-cancel-discards-draft`, `backoffice-peluch-edit` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Pendiente: continuar, guardar, descartar y reabrir con publicación desmarcada. |
+| `auth-sign-up-form` | `frontend/e2e/auth/auth.spec.ts` | Aprobado en `160beb3`: 503 → error/formulario, 429 inmediato y recuperación; API real/ UI con frontera simulada. |
+| `backoffice-peluch-create-draft-on-color-upload`, `backoffice-peluch-create-cancel-discards-draft`, `backoffice-peluch-edit` | `frontend/e2e/backoffice/backoffice-peluch-draft-lifecycle.spec.ts` | Aprobado en `160beb3`: continuar, guardar, descartar y reabrir desmarcado; API real/ UI con frontera simulada. |
 
 Audit estático de esta rama documental: signup es partial (failure sin
 crédito); edit es partial (error/failure sin crédito); creación/descarte
 reciben crédito de los mocks antiguos. Esos estados no acreditan aceptación
 de los escenarios nuevos ni persistencia del backend. Freshness dio exit 0.
+
+Contraste posterior con aplicación/specs del tren `160beb3`: signup obtiene
+crédito estático de las cuatro clases, edit mantiene error/failure históricos
+sin crédito. E2E conjunto obtuvo 19/19 y dictamen APPROVED del Verifier sobre ese SHA;
+APIClient real y Jest cuentan también con artefactos aprobados del tren. Freshness del tren indicó
+fecha de formulario/tests más nueva que el mapa; este contraste dirigido no
+oculta el aviso y se repetirá tras integrar la actualización documental.
+
+### Corrección obligatoria de `home-to-catalog`
+
+El caso existente `should use browser back button correctly` espera una
+primera tarjeta visible, hace click y exige URL de detalle antes de retroceder.
+Después exige catálogo y finalmente Inicio. Conserva nombre, tags y las
+excepciones previas de selector; elimina únicamente el count/conditional que
+podía aprobar sin acciones. El fallo CI era distinto del registro: retrocedía
+antes de llegar al detalle. No se añade flujo, mock, helper, timeout o cambio
+de aplicación. La ejecución local anterior con catálogo vacío no acredita
+este comportamiento; el caso corregido requiere fixtures scratch útiles en
+el tren/CI antes de declararlo validado. La comprobación presente es estática.
 
 Las cuatro clases ya estaban declaradas para signup/creación; no se inventan
 outcomes faltantes ni se acreditan nuevos casos antes de ejecutarlos. Los gaps

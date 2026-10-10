@@ -14,13 +14,25 @@ Ronda `improvement-20261010-r2`, base examinada
 no se confirma (`I-O-ffdd56735eed`). El pin compartido se entregó en
 `107e7f2`; el conductor informó Django 6.0.9 instalado y pip check verde.
 
-Los frentes conservan propiedad de aplicación/tests; QA sólo actualiza mapas,
-contexto y reporte dirigido. **Aceptación combinada pendiente**: APIClient
-real scratch, Jest y E2E de UI con frontera HTTP simulada, más gate, sobre el
-SHA final limpio. Sin servidor backend permanente, cambios de config global,
-servicio, migraciones operativas, seeds, SMTP real ni pago. Este estado no
-acredita CI ni entrega final. Reporte nuevo:
-`docs/audits/2026-10-10-mimittos-improvement-pass-r2.md`.
+La aplicación combinada `160beb3bd70b1dd5b22c9a9b3d70def2464d1972` fue
+aprobada por el Verifier: 65 backend, 18 unit, 19 E2E y gate estricto. E2E
+usa UI real y frontera API simulada; el primer intento fallido por hostname
+se preserva, y el rerun localhost pasó 19/19. No se afirma integración
+navegador–Django, rendimiento/monitoring vivo ni despliegue.
+
+El cierre incluye una corrección obligatoria de CI: el caso de retroceso
+exige tarjeta visible y llegada al detalle antes de goBack; antes podía
+pasar sin acciones con catálogo vacío o retroceder demasiado pronto. Sólo
+cambia ese caso; no es otra mejora de aplicación. Su ejecución útil local
+no se acredita: el tren/CI debe aportar catálogo scratch y probarlo.
+
+Los PR #105–#109 están abiertos. El conductor informó #105/#106/#108/#109
+verdes antes del cierre y #107 rojo por navegación. El nuevo SHA necesita
+revalidación de comprobaciones afectadas y CI: **aceptación del árbol final
+pendiente**. Los frentes conservan propiedad de aplicación/tests; QA sólo
+escribe sus cinco documentos y el caso de navegación autorizado. Sin servidor
+backend permanente, config global, servicio, migraciones operativas, seeds,
+SMTP real o pago. Reporte: `docs/audits/2026-10-10-mimittos-improvement-pass-r2.md`.
 
 La compra principal, contraseña nueva del dueño y errores por línea de la
 primera ronda se conservan; no se reabre su causa. Categorías QA es elegible
