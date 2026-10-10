@@ -19,6 +19,7 @@ ERROR = {'detail': 'El enlace de acceso no es válido o ha expirado.'}
 
 @pytest.fixture
 def bridge(db):
+    """Issue a handoff through the real admin for a verified customer."""
     actor = AdminUserFactory()
     target = UserFactory()
     request = RequestFactory().get('/admin/')
@@ -29,6 +30,7 @@ def bridge(db):
 
 
 def test_handoff_opens_verified_customer_session(bridge):
+    """Verify that an authorized handoff authenticates the intended customer."""
     _, target, handoff = bridge
     client = APIClient()
     response = client.post(ENDPOINT, {'handoff': handoff}, format='json')
@@ -42,6 +44,7 @@ def test_handoff_opens_verified_customer_session(bridge):
 
 @pytest.mark.parametrize('payload', [{}, {'handoff': None}, {'handoff': 12}, {'handoff': ''}])
 def test_handoff_rejects_invalid_request_shape(db, payload):
+    """Reject missing or invalid handoff values without returning tokens."""
     response = APIClient().post(ENDPOINT, payload, format='json')
     assert response.status_code == 400
     assert set(response.data) == {'detail'}
@@ -49,6 +52,7 @@ def test_handoff_rejects_invalid_request_shape(db, payload):
 
 @pytest.mark.parametrize('token_field', ['access', 'refresh'])
 def test_handoff_rejects_customer_jwt(db, token_field):
+    """Reject ordinary customer JWTs as administrative login assertions."""
     customer = UserFactory()
     jwt = generate_auth_tokens(customer)[token_field]
     response = APIClient().post(ENDPOINT, {'handoff': jwt}, format='json')
@@ -59,14 +63,16 @@ def test_handoff_rejects_customer_jwt(db, token_field):
 
 
 def test_handoff_rejects_tampered_assertion(bridge):
+    """Reject a handoff whose signed contents were modified."""
     _, _, handoff = bridge
     response = APIClient().post(ENDPOINT, {'handoff': handoff + 'x'}, format='json')
     assert response.status_code == 403
     assert response.data == ERROR
 
 
-@pytest.mark.parametrize('seconds, expected_status', [(60, 200), (61, 403)])
+@pytest.mark.parametrize(('seconds', 'expected_status'), [(60, 200), (61, 403)])
 def test_handoff_respects_sixty_second_lifetime(db, seconds, expected_status):
+    """Enforce the lifetime boundary of an otherwise valid handoff."""
     actor = AdminUserFactory()
     target = UserFactory()
     with freeze_time('2026-10-10 12:00:00') as clock:
@@ -76,12 +82,13 @@ def test_handoff_respects_sixty_second_lifetime(db, seconds, expected_status):
     assert response.status_code == expected_status
 
 
-@pytest.mark.parametrize('person, field, value', [
+@pytest.mark.parametrize(('person', 'field', 'value'), [
     ('actor', 'is_active', False), ('actor', 'email_verified', False),
     ('actor', 'is_superuser', False), ('target', 'is_active', False),
     ('target', 'email_verified', False), ('target', 'is_superuser', True),
 ])
 def test_handoff_rechecks_current_eligibility(bridge, person, field, value):
+    """Reject a handoff after its actor or target loses eligibility."""
     actor, target, handoff = bridge
     user = {'actor': actor, 'target': target}[person]
     setattr(user, field, value)
@@ -95,6 +102,7 @@ def test_handoff_rechecks_current_eligibility(bridge, person, field, value):
 
 @pytest.mark.parametrize('person', ['actor', 'target'])
 def test_handoff_rejects_password_change(bridge, person):
+    """Revoke an outstanding handoff when either password changes."""
     actor, target, handoff = bridge
     user = {'actor': actor, 'target': target}[person]
     user.set_password('ChangedPassword123!')
@@ -108,6 +116,7 @@ def test_handoff_rejects_password_change(bridge, person):
 
 @pytest.mark.parametrize('person', ['actor', 'target'])
 def test_handoff_rejects_deleted_account(bridge, person):
+    """Reject a handoff whose actor or target no longer exists."""
     actor, target, handoff = bridge
     user = {'actor': actor, 'target': target}[person]
     user_id = user.pk
@@ -119,6 +128,7 @@ def test_handoff_rejects_deleted_account(bridge, person):
 
 
 def test_handoff_remains_reusable_within_lifetime(bridge):
+    """Allow the same authorized handoff to be reused before expiry."""
     _, target, handoff = bridge
     client = APIClient()
     first = client.post(ENDPOINT, {'handoff': handoff}, format='json')
@@ -129,6 +139,7 @@ def test_handoff_remains_reusable_within_lifetime(bridge):
 
 
 def test_handoff_ignores_unrelated_bearer(bridge):
+    """Authenticate only the handoff even when an unrelated bearer is sent."""
     _, target, handoff = bridge
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION='Bearer stale-unrelated-token')
@@ -138,6 +149,7 @@ def test_handoff_ignores_unrelated_bearer(bridge):
 
 
 def test_handoff_rejects_signed_malformed_claims(bridge):
+    """Reject malformed claims even when their signature is valid."""
     handoff = signing.dumps({'actor_id': []}, salt=AdminLoginService.SALT)
     response = APIClient().post(ENDPOINT, {'handoff': handoff}, format='json')
     assert response.status_code == 403
