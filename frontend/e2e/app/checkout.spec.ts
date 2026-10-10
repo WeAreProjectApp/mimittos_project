@@ -3,6 +3,81 @@ import { waitForPageLoad, testCheckoutData } from '../fixtures';
 import { CHECKOUT_FORM_DISPLAY, CHECKOUT_FORM_VALIDATION, CHECKOUT_FORM_FILL, CHECKOUT_WOMPI_REDIRECT } from '../helpers/flow-tags';
 
 test.describe('Checkout Flow', () => {
+  // quality: disable test_too_long (rejection → cart correction → successful retry is the user journey)
+  test('recovers from a rejected cart quantity',
+    { tag: [...CHECKOUT_FORM_VALIDATION, '@outcome:error'] }, async ({ page }) => {
+      // Catches a quantity rejection becoming a generic error with no actionable cart link.
+      const common = {
+        size_id: 2, size_label: 'Mediano', color_id: 1, color_name: 'Rosa', color_hex: '#D4848A',
+        unit_price: 80000, personalization_cost: 0, gallery_urls: [],
+        has_huella: false, huella_type: '', huella_text: '', huella_media_id: null,
+        has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null,
+        deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: true, shipping_cost: 0,
+      }
+      const originalItems = [
+        { ...common, peluch_id: 1, peluch_slug: 'osito-coral', title: 'Osito Coral', quantity: 2 },
+        { ...common, peluch_id: 2, peluch_slug: 'conejo-lila', title: 'Conejo Lila', quantity: 10 },
+      ]
+      const quantityMessage = 'Ensure this value is less than or equal to 10.'
+      const responses = [
+        { status: 400, json: { items: { 1: { quantity: [quantityMessage] } } } },
+        { status: 201, json: {
+          order_number: 'MMT-QUANTITY', total_amount: 960000, deposit_amount: 480000,
+          balance_amount: 480000, shipping_amount: 0, discount_amount: 0,
+          payment_mode: 'deposit', amount_paid_now: 480000, is_guest: true,
+        } },
+      ]
+      const attempts: Array<{ items: Array<{ peluch_id: number; quantity: number }> }> = []
+      await page.route('**/api/orders/', async (route) => {
+        attempts.push(route.request().postDataJSON())
+        await route.fulfill(responses.shift()!)
+      })
+      await page.goto('/cart')
+      await page.evaluate((items) => {
+        localStorage.setItem('cart', JSON.stringify({ state: { items }, version: 0 }))
+      }, originalItems)
+      await page.reload()
+      const failedLine = page.getByTestId('cart-item-2-2-1')
+      await failedLine.getByRole('button', { name: '+', exact: true }).click()
+      await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click()
+      await page.getByLabel('Nombre completo').fill('Ana López')
+      await page.getByLabel('Correo electrónico').fill('ana@example.com')
+      await page.getByLabel('Celular').fill('3001234567')
+      await page.getByPlaceholder('Calle 50 # 40-20, Apto 301').fill('Calle 50 # 40-20')
+      await page.getByRole('checkbox').check()
+      await page.getByRole('button', { name: /Ir a pagar/ }).click()
+
+      const recoveryLink = page.getByRole('link', { name: 'Revisar Conejo Lila en el carrito' })
+      await expect(recoveryLink).toHaveAttribute('href', '/cart')
+      await expect(recoveryLink.locator('..')).toContainText(quantityMessage)
+      await expect(page.getByRole('link', { name: 'Revisar Osito Coral en el carrito' })).toHaveCount(0)
+      await expect(page.getByRole('link', { name: /Volver a personalizar/ })).toHaveCount(0)
+      await expect(page).toHaveURL(/\/checkout$/)
+      expect(attempts[0].items).toEqual([
+        expect.objectContaining({ peluch_id: 1, quantity: 2 }),
+        expect.objectContaining({ peluch_id: 2, quantity: 11 }),
+      ])
+      const rejectedCart = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
+      expect(rejectedCart).toEqual([originalItems[0], { ...originalItems[1], quantity: 11 }])
+
+      await recoveryLink.click()
+      await page.getByTestId('cart-item-2-2-1').getByRole('button', { name: '−', exact: true }).click()
+      await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click()
+      await page.getByLabel('Nombre completo').fill('Ana López')
+      await page.getByLabel('Correo electrónico').fill('ana@example.com')
+      await page.getByLabel('Celular').fill('3001234567')
+      await page.getByPlaceholder('Calle 50 # 40-20, Apto 301').fill('Calle 50 # 40-20')
+      await page.getByRole('checkbox').check()
+      await page.getByRole('button', { name: /Ir a pagar/ }).click()
+
+      await expect(page).toHaveURL(/\/payment\?order=MMT-QUANTITY&amount=480000&guest=1$/)
+      expect(attempts[1].items).toEqual([
+        expect.objectContaining({ peluch_id: 1, quantity: 2 }),
+        expect.objectContaining({ peluch_id: 2, quantity: 10 }),
+      ])
+    },
+  )
+
   // quality: disable test_too_long (product → checkout → server amount verifies rounding parity)
   // Catches the 100 COP difference caused by Math.round at a nearest-even deposit tie.
   test('shows the same halfway deposit as the order charge',

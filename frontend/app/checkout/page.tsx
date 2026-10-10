@@ -56,7 +56,7 @@ export default function CheckoutPage() {
   const [hydrated, setHydrated] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [itemErrors, setItemErrors] = useState<Record<number, string[]>>({})
+  const [itemErrors, setItemErrors] = useState<Record<number, CartLineIssue>>({})
 
   useEffect(() => { setHydrated(true) }, [])
 
@@ -100,19 +100,29 @@ export default function CheckoutPage() {
       router.push(`/payment?order=${result.order_number}&amount=${result.amount_paid_now}${guestParam}`)
     } catch (err: unknown) {
       const data = (err as { response?: { data?: CreateOrderErrorBody } })?.response?.data
-      const mediaErrors: Record<number, string[]> = {}
+      const lineErrors: Record<number, CartLineIssue> = {}
       // Entries keep each cart-line index whether the API sends an indexed object or an array.
       Object.entries(data?.items ?? {}).forEach(([index, line]) => {
         if (!line || typeof line !== 'object') return
-        const messages = ['huella_media_id', 'huella_media_token', 'audio_media_id', 'audio_media_token']
+        const lineIndex = Number(index)
+        if (!Number.isInteger(lineIndex) || lineIndex < 0 || lineIndex >= items.length) return
+        const mediaMessages = ['huella_media_id', 'huella_media_token', 'audio_media_id', 'audio_media_token']
           .flatMap((field) => line[field] ?? [])
           .filter((message) => typeof message === 'string')
-        if (messages.length) mediaErrors[Number(index)] = messages
+        const cartMessages = ['quantity', 'peluch_id', 'size_id', 'color_id']
+          .flatMap((field) => line[field] ?? [])
+          .filter((message) => typeof message === 'string')
+        const messages = [...cartMessages, ...mediaMessages]
+        if (messages.length) lineErrors[lineIndex] = {
+          messages, media: mediaMessages.length > 0, cart: cartMessages.length > 0,
+        }
       })
-      setItemErrors(mediaErrors)
-      setError(Object.keys(mediaErrors).length
-        ? 'Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.'
-        : data?.detail || data?.non_field_errors?.[0] || 'No pudimos completar el pedido. Por favor intenta de nuevo.')
+      setItemErrors(lineErrors)
+      setError(Object.values(lineErrors).some((issue) => issue.cart)
+        ? 'Revisa los productos indicados para continuar. Tu carrito se conserva.'
+        : Object.keys(lineErrors).length
+          ? 'Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.'
+          : data?.detail || data?.non_field_errors?.[0] || 'No pudimos completar el pedido. Por favor intenta de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -272,11 +282,15 @@ export default function CheckoutPage() {
                       <b style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, color: 'var(--terracotta)', fontSize: 14 }}>{fmt(itemTotal)}</b>
                       {itemErrors[idx] && (
                         <div role="alert" style={{ color: '#c23b3b', fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>
-                          {itemErrors[idx].map((message) => <p key={message}>{message}</p>)}
-                          <Link
+                          {itemErrors[idx].messages.map((message) => <p key={message}>{message}</p>)}
+                          {itemErrors[idx].cart && <Link
+                            href="/cart"
+                            style={{ display: 'block', color: 'var(--coral)', fontWeight: 700, textDecoration: 'underline' }}
+                          >Revisar {item.title} en el carrito</Link>}
+                          {itemErrors[idx].media && <Link
                             href={item.peluch_slug ? `/peluches/${encodeURIComponent(item.peluch_slug)}?cartItem=${item.peluch_id}-${item.size_id}-${item.color_id}` : '/catalog'}
                             style={{ color: 'var(--coral)', fontWeight: 700, textDecoration: 'underline' }}
-                          >Volver a personalizar {item.title}</Link>
+                          >Volver a personalizar {item.title}</Link>}
                         </div>
                       )}
                     </div>
@@ -342,6 +356,12 @@ const modeOptionStyle: React.CSSProperties = {
 }
 
 type CartLineErrors = Record<string, string | string[] | undefined>
+
+type CartLineIssue = {
+  messages: string[]
+  media: boolean
+  cart: boolean
+}
 
 // DRF 3.18 reports only the invalid cart lines, keyed by index ({"1": {...}});
 // earlier DRF versions sent one entry per line in an array.
