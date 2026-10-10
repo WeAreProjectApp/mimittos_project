@@ -4,7 +4,7 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.11
+**Version:** 1.5.12
 **Last Updated:** 2026-10-10
 
 ## Revisión dirigida r4 — 2026-10-10
@@ -13,8 +13,22 @@ La revisión de `e2e-user-flows-check` contrasta exclusivamente el descarte de
 borrador y la precedencia de solicitudes del dashboard con la aplicación de
 Observabilidad `c2c097d389e75d1b82c839dc58991829f4f2dfc3`. Conserva los IDs:
 el descarte añade `failure`; el filtro conserva únicamente `success`, incluido
-su fallback silencioso. El registro 1.5.11 no amplía categorías, retirada de
+su fallback silencioso. El registro 1.5.12 no amplía categorías, retirada de
 color completo ni los 32 flujos parciales históricos.
+
+### Revisión posterior del registro 1.5.12
+
+Se revisó el tren `81e50f74142c86c43a7fdda34f10b96e6ce5d4a6` y la corrección
+`957f9cbb2b10efa93cf27414ed33b788baff664f`: sólo cambia
+`frontend/components/admin/__tests__/PeluchForm.test.tsx`. La prueba del
+reintento tras desconexión comprueba una segunda llamada DELETE, mantiene su
+respuesta pendiente y entrega después el 404; así evita aceptar el mensaje
+anterior como evidencia del segundo fallo. No modifica aplicación, UX, IDs,
+contratos ni outcomes. El descarte sigue requiriendo 204 para salir.
+
+Este refresh documental es posterior a la corrección que invalidó freshness;
+no atribuye pruebas al nuevo commit. El conductor verificará freshness y CI
+sobre el tren resultante, conservando la procedencia de ejecuciones anteriores.
 
 ### Personal administrativo — matriz de los dos flujos
 
