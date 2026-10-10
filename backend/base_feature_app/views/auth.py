@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 CODE_LIMIT_ERROR = {
     'error': 'Has alcanzado el límite de intentos o envíos. Inténtalo de nuevo más tarde.',
 }
+REGISTRATION_EMAIL_ERROR = {
+    'error': (
+        'No pudimos confirmar el envío del código. Tu cuenta sigue pendiente de verificación. '
+        'Espera al menos un minuto antes de volver a intentarlo.'
+    ),
+}
 
 
 @api_view(['POST'])
@@ -65,7 +71,8 @@ def sign_up(request):
             )
             if password_code is None:
                 return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
-            send_verification_code(email, password_code.code)
+            if not send_verification_code(email, password_code.code):
+                return Response(REGISTRATION_EMAIL_ERROR, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             return Response(
                 {'detail': 'Ya existe una cuenta pendiente de verificación. Te reenviamos el código a tu correo.', 'email': email},
                 status=status.HTTP_200_OK
@@ -89,7 +96,8 @@ def sign_up(request):
     )
     if password_code is None:
         return Response(CODE_LIMIT_ERROR, status=status.HTTP_429_TOO_MANY_REQUESTS)
-    send_verification_code(email, password_code.code)
+    if not send_verification_code(email, password_code.code):
+        return Response(REGISTRATION_EMAIL_ERROR, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     return Response(
         {'detail': 'Cuenta creada. Te enviamos un código de verificación a tu correo.', 'email': email},
