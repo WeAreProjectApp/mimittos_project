@@ -192,7 +192,7 @@ test('changes only the selected sibling quantity', { tag: [...CART_UPDATE_QTY, '
 })
 
 // Catches hydration changing identities or personalized quantities on the next reload.
-test('keeps sibling identities after two cart reloads', { tag: [...CART_PERSIST, '@outcome:success'] }, async ({ page }) => {
+test('keeps sibling identities after two cart reloads', { tag: [...CART_PERSIST, '@outcome:display'] }, async ({ page }) => {
   const { luna, sol } = await addNamedSiblings(page)
   await sol.getByRole('button', { name: '+', exact: true }).click()
   await expect(sol.getByRole('button', { name: '+', exact: true }).locator('..').getByText('2', { exact: true })).toHaveText('2')
