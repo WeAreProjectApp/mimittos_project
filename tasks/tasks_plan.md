@@ -5,6 +5,47 @@ description: Task backlog, feature completion status, known issues, and test cov
 
 # Tasks Plan — Mimittos
 
+## Ronda transversal r5 — 2026-10-10
+
+- [x] Diagnosticar los seis frentes sobre `14a310a` y aprobar sólo tres causas
+  con propiedad exclusiva por archivo.
+- Separar líneas del carrito con personalizaciones/cotizaciones distintas;
+  conservar persistencia versión 0 y recuperación de enlaces heredados
+  (`I-M-9668da267913`).
+- Impedir que una respuesta obsoleta del detalle administrativo publique
+  datos, error o fin de carga sobre otro pedido (`I-O-532fcbbffd28`).
+- Exigir lectura válida antes de editar/guardar la cinta y habilitar reintento
+  manual de lectura (`I-O-ff31c1101cab`).
+- Validar mutaciones y recargas de hermanos del mismo SKU, recuperación de
+  archivos, respuestas fuera de orden y bloqueo/recuperación del GET de cinta.
+- Auditar los flujos afectados y añadir `backoffice-order-detail`; preservar
+  las brechas históricas sin ampliar esta ronda a deuda independiente.
+- Entregar un PR por frente más documentación compartida, verificar la
+  combinación, integrar con merge-queue y comprobar el cierre mediante
+  `all-in-base --check-only` antes de retirar recursos propios.
+
+La evidencia de implementación, aceptación y entrega se conserva en el registro
+local `/tmp/mimittos-improvement-10102026-r5/` y los PR de esta ronda. Esos
+resultados, no este listado de requisitos, determinan su estado final. No se
+publica trabajo en toolkit ni se modifica el checkout desplegado.
+
+Pendientes por cupo, ambos elegibles: tres E2E de categorías que sólo esperan
+la petición, y el guardado de cinta que queda bloqueado si falla el PUT.
+No confundirlos con descartes por bajo retorno. Banco conserva su bloqueo
+contractual; responsividad requiere reproducción en la matriz canónica.
+
+## Cierre de rondas anteriores — 2026-10-10
+
+- [x] Integrar PR #101–#103, #105–#109, #111–#115 y #117–#119.
+- [x] Cerrar R4 con tres causas y QA combinada: enlace de invitado, descarte
+  recuperable y vigencia del filtro de analytics; `main` final `14a310a`.
+- [x] Comprobar igualdad del árbol de R4 con el tren probado `48b94bf` y
+  conservar su evidencia de 66 casos locales útiles.
+- [x] Cerrar el borrador #120 sin merge y retirar los recursos propios de R4.
+
+Las brechas parciales históricas permanecen abiertas. Los PR antiguos
+integrados no se reutilizan ni se vuelven a incluir en merge-queue.
+
 ## Ronda transversal r2 — 2026-10-10
 
 - [x] Acotar tres causas y propiedad por frente: multipart Django 6.0.9,
@@ -19,11 +60,11 @@ description: Task backlog, feature completion status, known issues, and test cov
   `160beb3`; preservar el intento fallido del harness de cookies/hostname.
 - [x] Corregir únicamente el caso de retroceso que bloqueó CI: tarjeta visible,
   llegada al detalle y dos destinos de back obligatorios; diff/AST/gate focal.
-- [ ] Integrar cierre documental y test corregido; fijar SHA final, ejecutar
-  retroceso con catálogo scratch útil y gate completo/freshness.
-- [ ] Terminar empaquetado de manifest exacto y comprobar CI/publicación del
-  nuevo HEAD con el conductor. Los 102 casos aprobados en `160beb3` no
-  acreditan automáticamente la nueva corrección ni el árbol final.
+- [x] Integrar el cierre documental y el caso corregido mediante PR #109;
+  los cinco PR de R2 ya están integrados en `main`.
+- La aceptación del cierre se consulta en los PR y el archivo de evidencias
+  de R2. Los 102 casos aprobados en `160beb3` siguen describiendo sólo ese
+  commit intermedio; no acreditan automáticamente revisiones posteriores.
 
 APIClient usa scratch real y medios temporales; E2E usa UI real con frontera
 HTTP simulada. No afirmar integración navegador–Django ni monitoring vivo.
