@@ -65,7 +65,7 @@ it('changes only Sol through its visible quantity control', async () => {
   render(<CartPage />)
 
   const line = screen.getByRole('group', { name: 'Osito Coral Nombre: Sol' })
-  fireEvent.click(within(line).getByRole('button', { name: '+', exact: true }))
+  fireEvent.click(within(line).getByRole('button', { name: '+' }))
 
   expect(actualStore.getState().items).toEqual([luna, { ...sol, quantity: 2 }])
   expect(screen.getByRole('group', { name: 'Osito Coral Nombre: Luna' })).toHaveTextContent('Nombre: Luna')

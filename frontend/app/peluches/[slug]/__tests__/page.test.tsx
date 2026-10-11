@@ -1,5 +1,6 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { mockCartItems } from '../../../../lib/__tests__/fixtures'
+import type { CartItem } from '../../../../lib/types'
 import { describe, it, expect, beforeEach } from '@jest/globals'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -284,7 +285,7 @@ async function renderRecoveryPage() {
 
 const recoveryId = 'cl_00000000-0000-4000-8000-000000000001'
 const siblingId = 'cl_00000000-0000-4000-8000-000000000002'
-function recoverySetup(key: string, items: unknown[], save = jest.fn(() => true)) {
+function recoverySetup(key: string, items: unknown[], save: (cartLineId: string, item: CartItem) => boolean = jest.fn(() => true)) {
   jest.clearAllMocks()
   mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
   const push = jest.fn()

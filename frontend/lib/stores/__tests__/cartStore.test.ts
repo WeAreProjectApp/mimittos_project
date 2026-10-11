@@ -106,6 +106,8 @@ describe('cartStore', () => {
       act(() => {
         result.current.addToCart({ ...item1, quantity: 1 })
         result.current.addToCart({ ...item2, quantity: 1 })
+      })
+      act(() => {
         result.current.removeFromCart(result.current.items[0].cart_line_id)
       })
       expect(result.current.items).toHaveLength(1)
@@ -118,6 +120,8 @@ describe('cartStore', () => {
       const { result } = renderHook(() => useCartStore())
       act(() => {
         result.current.addToCart({ ...item1, quantity: 1 })
+      })
+      act(() => {
         result.current.updateQuantity(result.current.items[0].cart_line_id, 5)
       })
       expect(result.current.items[0].quantity).toBe(5)
@@ -160,6 +164,8 @@ describe('cartStore', () => {
       const original = { ...item1, quantity: 2, has_huella: true, huella_media_id: 10, huella_media_token: 'old-huella' }
       act(() => {
         result.current.addToCart(original)
+      })
+      act(() => {
         result.current.updatePersonalization(result.current.items[0].cart_line_id, {
           ...original,
           personalization_cost: 12000,
@@ -384,7 +390,7 @@ describe('version zero cart hydration', () => {
     localStorage.setItem('cart', JSON.stringify({ state: { items: [item1] }, version: 0 }))
     await useCartStore.persist.rehydrate()
     const lines = useCartStore.getState().items
-    const oldStore = createStore<{ items: CartItem[] }>()(persist(() => ({ items: [] }), { name: 'cart' }))
+    const oldStore = createStore<{ items: CartItem[] }>()(persist<{ items: CartItem[] }>(() => ({ items: [] }), { name: 'cart' }))
 
     expect(oldStore.getState().items).toEqual(lines)
     oldStore.setState({ items: [...lines, item2] })

@@ -246,7 +246,7 @@ describe('CheckoutPage', () => {
     const clearCart = jest.fn()
     const push = jest.fn()
     mockUseRouter.mockReturnValue({ push })
-    const failedItem = { ...peluchItem, peluch_id: 2, title: 'Conejo Lila', quantity: 11 }
+    const failedItem = { ...peluchItem, cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 2, title: 'Conejo Lila', quantity: 11 }
     setCartState({ items: [peluchItem, failedItem], clearCart })
     mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items } } })
 
