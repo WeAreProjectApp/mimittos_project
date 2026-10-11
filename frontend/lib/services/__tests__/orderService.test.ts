@@ -198,4 +198,26 @@ describe('orderService', () => {
       expect(result).toEqual(mockUpdated)
     })
   })
+
+it('sends both sibling configurations without their local identities', async () => {
+  jest.clearAllMocks()
+  // Catches a local line ID leaking into the order contract or the second configuration disappearing.
+  mockPost.mockResolvedValue({ data: { order_number: 'ORD-SIBLINGS' } })
+  await orderService.createOrder({
+    customer_name: 'Ana', customer_email: 'ana@example.com', customer_phone: '3001234567',
+    address: 'Calle 1', city: 'Bogotá', department: 'Cundinamarca', postal_code: '',
+    items: [
+      { ...mockCartItems[0], quantity: 1, cart_line_id: 'local-luna', huella_text: 'Luna', huella_media_id: 41, huella_media_token: 'image-luna', audio_media_id: 51, audio_media_token: 'audio-luna' },
+      { ...mockCartItems[0], quantity: 1, cart_line_id: 'local-sol', huella_text: 'Sol', huella_media_id: 42, huella_media_token: 'image-sol', audio_media_id: 52, audio_media_token: 'audio-sol' },
+    ],
+  })
+
+  const payload = mockPost.mock.calls[0][1] as { items: Array<Record<string, unknown>> }
+  expect(payload.items).toHaveLength(2)
+  expect(payload.items[0]).toEqual(expect.objectContaining({ huella_text: 'Luna', huella_media_id: 41, huella_media_token: 'image-luna', audio_media_id: 51, audio_media_token: 'audio-luna' }))
+  expect(payload.items[1]).toEqual(expect.objectContaining({ huella_text: 'Sol', huella_media_id: 42, huella_media_token: 'image-sol', audio_media_id: 52, audio_media_token: 'audio-sol' }))
+  expect(payload.items[0]).not.toHaveProperty('cart_line_id')
+  expect(payload.items[1]).not.toHaveProperty('cart_line_id')
+})
+
 })

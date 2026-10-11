@@ -54,6 +54,10 @@ async function openPersonalizedPeluch(page: Page) {
 async function submitOrderFromDetail(page: Page): Promise<OrderPayload> {
   await page.getByRole('button', { name: /^Agregar/ }).click();
   await page.getByRole('link', { name: 'Carrito', exact: true }).click();
+  return submitOrderFromCart(page);
+}
+
+async function submitOrderFromCart(page: Page): Promise<OrderPayload> {
   await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click();
   await page.getByLabel('Nombre completo', { exact: true }).fill('Ana López');
   await page.getByLabel('Correo electrónico', { exact: true }).fill('ana@example.com');
@@ -166,3 +170,29 @@ test.describe('Peluch Detail — Personalization', () => {
     }
   );
 });
+
+
+// Catches the second same-SKU name or phrase being silently replaced by the first at order submission.
+test('sends both named sibling configurations to the order', {
+  tag: [...PELUCH_DETAIL_HUELLA, ...PELUCH_DETAIL_CORAZON, '@flow:cart-add', '@outcome:success'],
+}, async ({ page }) => {
+  await openPersonalizedPeluch(page)
+  await page.getByPlaceholder('Escribe el nombre aquí...').fill('Luna')
+  await page.getByPlaceholder('Una frase especial (máx. 50 caracteres)').fill('Para Luna')
+  await page.getByRole('button', { name: /^Agregar/ }).click()
+  await expect(page.getByText('¡Agregado al carrito!')).toHaveText('¡Agregado al carrito!')
+  await page.getByPlaceholder('Escribe el nombre aquí...').fill('Sol')
+  await page.getByPlaceholder('Una frase especial (máx. 50 caracteres)').fill('Para Sol')
+  await page.getByRole('button', { name: /^Agregar/ }).click()
+  await page.getByRole('link', { name: 'Carrito', exact: true }).click()
+  await expect(page.getByTestId('cart-item-41-21-31')).toHaveCount(2)
+  await expect(page.getByRole('group', { name: 'Osito personalizable Nombre: Luna · Corazón: Para Luna', exact: true })).toContainText('Nombre: Luna')
+  await expect(page.getByRole('group', { name: 'Osito personalizable Nombre: Sol · Corazón: Para Sol', exact: true })).toContainText('Nombre: Sol')
+  const payload = await submitOrderFromCart(page)
+
+  expect(payload.items).toEqual([
+    { peluch_id: 41, size_id: 21, color_id: 31, quantity: 1, has_huella: true, huella_type: 'name', huella_text: 'Luna', huella_media_id: null, huella_media_token: null, has_corazon: true, corazon_phrase: 'Para Luna', has_audio: false, audio_media_id: null, audio_media_token: null },
+    { peluch_id: 41, size_id: 21, color_id: 31, quantity: 1, has_huella: true, huella_type: 'name', huella_text: 'Sol', huella_media_id: null, huella_media_token: null, has_corazon: true, corazon_phrase: 'Para Sol', has_audio: false, audio_media_id: null, audio_media_token: null },
+  ])
+  await expect(page).toHaveURL(/\/payment\?order=MMT-PERSONALIZADO&amount=47500&guest=1$/)
+})

@@ -103,12 +103,14 @@ async function requestAndVerify(page: Page) {
 test('recovers the second personalization without replacing sibling lines @flow:checkout-personalization-media-recovery @outcome:error @outcome:success', async ({ page }) => {
   // This is the persisted-cart boundary used by the checkout itself; the recovery is driven through its visible link and file chooser.
   await page.addInitScript(() => {
+    if (sessionStorage.getItem('r5-personalization-cart-seeded')) return
+    sessionStorage.setItem('r5-personalization-cart-seeded', '1')
     localStorage.setItem('cart', JSON.stringify({ state: { items: [
-      { peluch_id: 11, peluch_slug: 'oso-prueba', title: 'Oso intacto', size_id: 21, size_label: 'Mediano', color_id: 31, color_name: 'Coral', color_hex: '#f00', unit_price: 100000, personalization_cost: 0, quantity: 2, gallery_urls: [], has_huella: false, huella_type: '', huella_text: '', huella_media_id: null, has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
-      { peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000001', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo intacto', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 2, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 81, huella_media_token: 'image-intact', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 82, audio_media_token: 'audio-intact', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 94, audio_media_token: 'audio-affected', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
     ] }, version: 0 }))
   })
-  const peluch = { id: 12, title: 'Conejo afectado', slug: 'conejo-prueba', category_name: 'Prueba', category_slug: 'prueba', lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 0, min_price: 80000, discounted_min_price: 80000, available_colors: [{ id: 32, name: 'Crema', slug: 'crema', hex_code: '#fff', sort_order: 1, preview_url: null, image_count: 0, images: [] }], gallery_urls: [], average_rating: 0, review_count: 0, has_huella: true, has_corazon: false, has_audio: false, category: { id: 1, name: 'Prueba', slug: 'prueba', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null }, description: [], specifications: {}, care_instructions: [], size_prices: [{ id: 1, size: { id: 22, label: 'Pequeño', slug: 'pequeno', cm: '20 cm', sort_order: 1 }, price: 80000, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 }], view_count: 0, huella_extra_cost: 5000, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '' }
+  const peluch = { id: 12, title: 'Conejo afectado', slug: 'conejo-prueba', category_name: 'Prueba', category_slug: 'prueba', lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 0, min_price: 80000, discounted_min_price: 80000, available_colors: [{ id: 32, name: 'Crema', slug: 'crema', hex_code: '#fff', sort_order: 1, preview_url: null, image_count: 0, images: [] }], gallery_urls: [], average_rating: 0, review_count: 0, has_huella: true, has_corazon: false, has_audio: true, category: { id: 1, name: 'Prueba', slug: 'prueba', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null }, description: [], specifications: {}, care_instructions: [], size_prices: [{ id: 1, size: { id: 22, label: 'Pequeño', slug: 'pequeno', cm: '20 cm', sort_order: 1 }, price: 80000, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 }], view_count: 0, huella_extra_cost: 5000, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '' }
   await page.route('**/api/peluches/conejo-prueba/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(peluch) }))
   await page.route('**/api/peluches/conejo-prueba/reviews/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
   let createAttempt = 0
@@ -126,16 +128,15 @@ test('recovers the second personalization without replacing sibling lines @flow:
   await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: /Ir a pagar/i }).click()
   const recovery = page.getByRole('link', { name: 'Volver a personalizar Conejo afectado' })
-  await expect(recovery).toHaveAttribute('href', '/peluches/conejo-prueba?cartItem=12-22-32')
+  await expect(recovery).toHaveAttribute('href', '/peluches/conejo-prueba?cartItem=cl_00000000-0000-4000-8000-000000000002')
   await recovery.click()
   await page.route('**/api/media/upload/', (route) => route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ media_id: 92, media_token: 'new-media-token', file_url: '/media/new.png', duration_sec: null, file_size_kb: 1 }) }))
-  // quality: allow-fragile-selector (the native file input has no label or test id; the preceding button is the user interaction).
-  await page.locator('input[type="file"]').setInputFiles({ name: 'huella.png', mimeType: 'image/png', buffer: Buffer.from('png') })
+  await page.getByTestId('huella-upload-input').setInputFiles({ name: 'huella.png', mimeType: 'image/png', buffer: Buffer.from('png') })
   await expect(page.getByRole('button', { name: /Imagen subida/ })).toHaveText(/Imagen subida/)
   await page.getByRole('button', { name: 'Guardar personalización' }).click()
   const summary = page.getByRole('heading', { name: 'Tu pedido' }).locator('..')
-  await expect(summary.getByText('Oso intacto', { exact: true })).toHaveText('Oso intacto')
-  await expect(summary.getByText('× 2 · Mediano · Coral')).toHaveText('× 2 · Mediano · Coral')
+  await expect(summary.getByText('Conejo intacto', { exact: true })).toHaveText('Conejo intacto')
+  await expect(summary.getByText('× 2 · Pequeño · Crema')).toHaveText('× 2 · Pequeño · Crema')
   await page.getByText('Nombre completo').locator('..').getByRole('textbox').fill('Ana')
   await page.getByText('Correo electrónico').locator('..').getByRole('textbox').fill(EMAIL)
   await page.getByText('Celular').locator('..').getByRole('textbox').fill('3001234567')
@@ -145,27 +146,30 @@ test('recovers the second personalization without replacing sibling lines @flow:
   await page.getByRole('button', { name: /Ir a pagar/i }).click()
   const payload = secondOrder.then((request) => request.postDataJSON() as { items: Array<{ huella_media_token?: string; quantity: number }> })
   await expect(page).toHaveURL(/order=RECOVERED-1/)
-  expect((await payload).items).toEqual(expect.arrayContaining([
-    expect.objectContaining({ peluch_id: 11, size_id: 21, color_id: 31, quantity: 2 }),
-    expect.objectContaining({ peluch_id: 12, size_id: 22, color_id: 32, quantity: 1, huella_media_token: 'new-media-token' }),
-  ]))
+  expect((await payload).items).toEqual([
+    { peluch_id: 12, size_id: 22, color_id: 32, quantity: 2, has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 81, huella_media_token: 'image-intact', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 82, audio_media_token: 'audio-intact' },
+    { peluch_id: 12, size_id: 22, color_id: 32, quantity: 1, has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 92, huella_media_token: 'new-media-token', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 94, audio_media_token: 'audio-affected' },
+  ])
 })
 
 // Fails if temporary media storage leaves a recovery cart without a retry path or changes either sibling line.
 test('keeps both lines recoverable after a media upload failure @flow:checkout-personalization-media-recovery @outcome:failure', async ({ page }) => {
   await page.addInitScript(() => {
+    if (sessionStorage.getItem('r5-personalization-cart-seeded')) return
+    sessionStorage.setItem('r5-personalization-cart-seeded', '1')
     localStorage.setItem('cart', JSON.stringify({ state: { items: [
-      { peluch_id: 11, peluch_slug: 'oso-prueba', title: 'Oso intacto', size_id: 21, size_label: 'Mediano', color_id: 31, color_name: 'Coral', color_hex: '#f00', unit_price: 100000, personalization_cost: 0, quantity: 2, gallery_urls: [], has_huella: false, huella_type: '', huella_text: '', huella_media_id: null, has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
-      { peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000001', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo intacto', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 2, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 81, huella_media_token: 'image-intact', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 82, audio_media_token: 'audio-intact', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 94, audio_media_token: 'audio-affected', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
     ] }, version: 0 }))
   })
-  const peluch = { id: 12, title: 'Conejo afectado', slug: 'conejo-prueba', category_name: 'Prueba', category_slug: 'prueba', lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 0, min_price: 80000, discounted_min_price: 80000, available_colors: [{ id: 32, name: 'Crema', slug: 'crema', hex_code: '#fff', sort_order: 1, preview_url: null, image_count: 0, images: [] }], gallery_urls: [], average_rating: 0, review_count: 0, has_huella: true, has_corazon: false, has_audio: false, category: { id: 1, name: 'Prueba', slug: 'prueba', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null }, description: [], specifications: {}, care_instructions: [], size_prices: [{ id: 1, size: { id: 22, label: 'Pequeño', slug: 'pequeno', cm: '20 cm', sort_order: 1 }, price: 80000, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 }], view_count: 0, huella_extra_cost: 5000, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '' }
+  const peluch = { id: 12, title: 'Conejo afectado', slug: 'conejo-prueba', category_name: 'Prueba', category_slug: 'prueba', lead_description: '', badge: 'none', is_active: true, is_featured: false, discount_pct: 0, display_order: 0, min_price: 80000, discounted_min_price: 80000, available_colors: [{ id: 32, name: 'Crema', slug: 'crema', hex_code: '#fff', sort_order: 1, preview_url: null, image_count: 0, images: [] }], gallery_urls: [], average_rating: 0, review_count: 0, has_huella: true, has_corazon: false, has_audio: true, category: { id: 1, name: 'Prueba', slug: 'prueba', description: '', display_order: 1, is_active: true, is_featured: false, image_url: null }, description: [], specifications: {}, care_instructions: [], size_prices: [{ id: 1, size: { id: 22, label: 'Pequeño', slug: 'pequeno', cm: '20 cm', sort_order: 1 }, price: 80000, is_available: true, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 }], view_count: 0, huella_extra_cost: 5000, corazon_extra_cost: 0, audio_extra_cost: 0, created_at: '', updated_at: '' }
   await page.route('**/api/peluches/conejo-prueba/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(peluch) }))
   await page.route('**/api/peluches/conejo-prueba/reviews/', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
   await page.route('**/api/orders/', (route) => route.request().method() === 'POST'
     ? route.fulfill({ status: 400, contentType: 'application/json', body: SECOND_LINE_MEDIA_ERROR })
     : route.continue())
   await page.goto('/checkout')
+  const originalCart = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
   await page.getByText('Nombre completo').locator('..').getByRole('textbox').fill('Ana')
   await page.getByText('Correo electrónico').locator('..').getByRole('textbox').fill(EMAIL)
   await page.getByText('Celular').locator('..').getByRole('textbox').fill('3001234567')
@@ -174,15 +178,24 @@ test('keeps both lines recoverable after a media upload failure @flow:checkout-p
   await page.getByRole('button', { name: /Ir a pagar/i }).click()
   await page.getByRole('link', { name: 'Volver a personalizar Conejo afectado' }).click()
   await page.route('**/api/media/upload/', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Almacenamiento temporal no disponible.' }) }))
-  // quality: allow-fragile-selector (the native file input has no label or test id; its visible upload button is asserted below).
-  await page.locator('input[type="file"]').setInputFiles({ name: 'huella.png', mimeType: 'image/png', buffer: Buffer.from('png') })
+  await page.getByTestId('huella-upload-input').setInputFiles({ name: 'huella.png', mimeType: 'image/png', buffer: Buffer.from('png') })
   await expect(page.getByRole('alert').filter({ hasText: 'Almacenamiento temporal no disponible.' })).toHaveText('Almacenamiento temporal no disponible.')
   await expect(page.getByRole('button', { name: 'Subir imagen' })).toBeEnabled()
-  await Promise.all([page.waitForURL('**/cart'), page.getByRole('link', { name: 'Carrito' }).press('Enter')])
-  await page.getByRole('link', { name: 'Continuar al checkout' }).click()
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)).toEqual(originalCart)
+  await page.unroute('**/api/media/upload/')
+  await page.route('**/api/media/upload/', (route) => route.fulfill({ status: 201, json: {
+    media_id: 93, media_token: 'retry-image', file_url: '/media/retry.png', duration_sec: null, file_size_kb: 1,
+  } }))
+  await page.getByTestId('huella-upload-input').setInputFiles({ name: 'retry-huella.png', mimeType: 'image/png', buffer: Buffer.from('png') })
+  await expect(page.getByRole('button', { name: /Imagen subida/ })).toHaveText(/Imagen subida/)
+  await page.getByRole('button', { name: 'Guardar personalización' }).click()
+  await expect(page).toHaveURL(/\/checkout$/)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)).toEqual([
+    originalCart[0], { ...originalCart[1], huella_media_id: 93, huella_media_token: 'retry-image' },
+  ])
   const summary = page.getByRole('heading', { name: 'Tu pedido' }).locator('..')
-  await expect(summary.getByText('Oso intacto', { exact: true })).toHaveText('Oso intacto')
-  await expect(summary.getByText('× 2 · Mediano · Coral')).toHaveText('× 2 · Mediano · Coral')
+  await expect(summary.getByText('Conejo intacto', { exact: true })).toHaveText('Conejo intacto')
+  await expect(summary.getByText('× 2 · Pequeño · Crema')).toHaveText('× 2 · Pequeño · Crema')
   await expect(summary.getByText('Conejo afectado', { exact: true })).toHaveText('Conejo afectado')
   await expect(summary.getByText('× 1 · Pequeño · Crema')).toHaveText('× 1 · Pequeño · Crema')
 })
@@ -290,9 +303,11 @@ test('keeps the visible tracking search private until recovery @flow:order-acces
 // Fails if the visible header-to-checkout journey loses either cart line before the media validation response.
 test('shows both cart lines before personalization recovery @flow:checkout-personalization-media-recovery @outcome:display', async ({ page }) => {
   await page.addInitScript(() => {
+    if (sessionStorage.getItem('r5-personalization-cart-seeded')) return
+    sessionStorage.setItem('r5-personalization-cart-seeded', '1')
     localStorage.setItem('cart', JSON.stringify({ state: { items: [
-      { peluch_id: 11, peluch_slug: 'oso-prueba', title: 'Oso intacto', size_id: 21, size_label: 'Mediano', color_id: 31, color_name: 'Coral', color_hex: '#f00', unit_price: 100000, personalization_cost: 0, quantity: 2, gallery_urls: [], has_huella: false, huella_type: '', huella_text: '', huella_media_id: null, has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
-      { peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: false, audio_media_id: null, deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000001', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo intacto', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 2, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 81, huella_media_token: 'image-intact', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 82, audio_media_token: 'audio-intact', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
+      { cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 12, peluch_slug: 'conejo-prueba', title: 'Conejo afectado', size_id: 22, size_label: 'Pequeño', color_id: 32, color_name: 'Crema', color_hex: '#fff', unit_price: 80000, personalization_cost: 5000, quantity: 1, gallery_urls: [], has_huella: true, huella_type: 'image', huella_text: '', huella_media_id: 91, huella_media_token: 'old', has_corazon: false, corazon_phrase: '', has_audio: true, audio_media_id: 94, audio_media_token: 'audio-affected', deposit_percentage: 50, full_payment_discount_pct: 0, free_shipping: false, shipping_cost: 0 },
     ] }, version: 0 }))
   })
   await page.goto('/')
@@ -300,14 +315,14 @@ test('shows both cart lines before personalization recovery @flow:checkout-perso
     page.waitForURL('**/cart'),
     page.getByRole('link', { name: 'Carrito' }).press('Enter'),
   ])
-  await expect(page.getByRole('heading', { name: 'Oso intacto' })).toHaveText('Oso intacto')
+  await expect(page.getByRole('heading', { name: 'Conejo intacto' })).toHaveText('Conejo intacto')
   await expect(page.getByRole('heading', { name: 'Conejo afectado' })).toHaveText('Conejo afectado')
   await expect(page.getByText('3 peluches')).toHaveText('3 peluches')
   await page.getByRole('link', { name: 'Continuar al checkout' }).click()
   const summary = page.getByRole('heading', { name: 'Tu pedido' }).locator('..')
-  await expect(summary.getByText('Oso intacto', { exact: true })).toHaveText('Oso intacto')
+  await expect(summary.getByText('Conejo intacto', { exact: true })).toHaveText('Conejo intacto')
   await expect(summary.getByText('Conejo afectado', { exact: true })).toHaveText('Conejo afectado')
-  await expect(summary.getByText('× 2 · Mediano · Coral')).toHaveText('× 2 · Mediano · Coral')
+  await expect(summary.getByText('× 2 · Pequeño · Crema')).toHaveText('× 2 · Pequeño · Crema')
   await expect(summary.getByText('× 1 · Pequeño · Crema')).toHaveText('× 1 · Pequeño · Crema')
   await expect(page.getByText('Tu carrito está vacío')).toHaveCount(0)
 })

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import React, { useMemo } from 'react'
 
 import {
-  calcDeposit, calcFullPaymentDiscount, calcShipping, lineTotal, useCartStore,
+  calcDeposit, calcFullPaymentDiscount, calcShipping, describeCartPersonalization, lineTotal, useCartStore,
 } from '@/lib/stores/cartStore'
 
 export default function CartPage() {
@@ -80,7 +80,7 @@ export default function CartPage() {
               const itemTotal = lineTotal(item)
               const itemKey = `${item.peluch_id}-${item.size_id}-${item.color_id}`
               return (
-                <div key={itemKey} data-testid={`cart-item-${itemKey}`} className="grid grid-cols-[90px_1fr] sm:grid-cols-[120px_1fr_auto] gap-4 sm:gap-5" style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
+                <div key={item.cart_line_id} role="group" aria-label={`${item.title} ${describeCartPersonalization(item).join(' · ')}`} data-testid={`cart-item-${itemKey}`} className="grid grid-cols-[90px_1fr] sm:grid-cols-[120px_1fr_auto] gap-4 sm:gap-5" style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
                   <div className="w-[90px] h-[90px] sm:w-[120px] sm:h-[120px]" style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', background: item.color_hex || 'var(--pink-melo)', position: 'relative' }}>
                     {cover && <Image src={cover} alt={item.title} fill style={{ objectFit: 'cover' }} />}
                   </div>
@@ -98,11 +98,12 @@ export default function CartPage() {
                       {item.has_corazon && <span style={{ background: '#FFF0E8', color: '#B8696F', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999 }}>💖 Corazón</span>}
                       {item.has_audio && <span style={{ background: '#FFF0E8', color: '#B8696F', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999 }}>🔊 Audio</span>}
                     </div>
+                    {describeCartPersonalization(item).map((description) => <p key={description} style={{ fontSize: 12, color: 'var(--navy)', overflowWrap: 'anywhere' }}>{description}</p>)}
                     <div style={{ fontSize: 12, color: 'var(--gray-warm)' }}>
                       Precio base: {fmt(item.unit_price)} {item.personalization_cost > 0 && `+ ${fmt(item.personalization_cost)} personalización`}
                     </div>
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 10 }}>
-                      <button onClick={() => removeFromCart(item.peluch_id, item.size_id, item.color_id)} style={{ color: '#c23b3b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+                      <button onClick={() => removeFromCart(item.cart_line_id)} style={{ color: '#c23b3b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
                         Eliminar
                       </button>
@@ -110,9 +111,9 @@ export default function CartPage() {
                   </div>
                   <div className="col-span-2 sm:col-span-1 flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-between gap-3 sm:gap-4">
                     <div style={{ display: 'flex', alignItems: 'center', background: 'var(--cream-warm)', border: '1.5px solid rgba(27,42,74,.08)', borderRadius: 12, padding: 4 }}>
-                      <button onClick={() => updateQuantity(item.peluch_id, item.size_id, item.color_id, Math.max(1, item.quantity - 1))} style={{ width: 30, height: 30, borderRadius: 8, color: 'var(--navy)', fontSize: 16, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>−</button>
+                      <button onClick={() => updateQuantity(item.cart_line_id, Math.max(1, item.quantity - 1))} style={{ width: 30, height: 30, borderRadius: 8, color: 'var(--navy)', fontSize: 16, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>−</button>
                       <span style={{ width: 34, textAlign: 'center', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.peluch_id, item.size_id, item.color_id, item.quantity + 1)} style={{ width: 30, height: 30, borderRadius: 8, color: 'var(--navy)', fontSize: 16, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
+                      <button onClick={() => updateQuantity(item.cart_line_id, item.quantity + 1)} style={{ width: 30, height: 30, borderRadius: 8, color: 'var(--navy)', fontSize: 16, fontWeight: 700, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 12, color: 'var(--gray-warm)' }}>{fmt(item.unit_price + item.personalization_cost)} c/u</div>
