@@ -10,7 +10,7 @@ import { orderService } from '@/lib/services/orderService'
 import { storeOrderAccess } from '@/lib/utils/orderAccess'
 import {
   calcAmountToPayNow, calcBalanceAtDelivery, calcDeposit, calcFullPaymentDiscount,
-  calcShipping, lineTotal, useCartStore,
+  calcShipping, describeCartPersonalization, lineTotal, useCartStore,
 } from '@/lib/stores/cartStore'
 import type { PaymentMode } from '@/lib/types'
 import { COLOMBIA_DEPARTMENTS, COLOMBIA_LOCATIONS } from '@/lib/data/colombiaLocations'
@@ -272,13 +272,14 @@ export default function CheckoutPage() {
                 const cover = item.gallery_urls?.[0]
                 const itemTotal = lineTotal(item)
                 return (
-                  <div key={`${item.peluch_id}-${item.size_id}-${item.color_id}-${idx}`} style={{ display: 'flex', gap: 12, paddingBottom: 12, borderBottom: '1px dashed rgba(212,132,138,.2)' }}>
+                  <div key={item.cart_line_id} role="group" aria-label={`${item.title} ${describeCartPersonalization(item).join(' · ')}`} style={{ display: 'flex', gap: 12, paddingBottom: 12, borderBottom: '1px dashed rgba(212,132,138,.2)' }}>
                     <div style={{ width: 54, height: 54, borderRadius: 10, overflow: 'hidden', background: item.color_hex || 'var(--pink-melo)', flexShrink: 0, position: 'relative' }}>
                       {cover && <Image src={cover} alt={item.title} fill style={{ objectFit: 'cover' }} />}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <strong style={{ display: 'block', fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--navy)' }}>{item.title}</strong>
                       <span style={{ fontSize: 11, color: 'var(--gray-warm)', display: 'block' }}>× {item.quantity} · {item.size_label} · {item.color_name}</span>
+                      {describeCartPersonalization(item).map((description) => <p key={description} style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{description}</p>)}
                       <b style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, color: 'var(--terracotta)', fontSize: 14 }}>{fmt(itemTotal)}</b>
                       {itemErrors[idx] && (
                         <div role="alert" style={{ color: '#c23b3b', fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>
@@ -288,7 +289,7 @@ export default function CheckoutPage() {
                             style={{ display: 'block', color: 'var(--coral)', fontWeight: 700, textDecoration: 'underline' }}
                           >Revisar {item.title} en el carrito</Link>}
                           {itemErrors[idx].media && <Link
-                            href={item.peluch_slug ? `/peluches/${encodeURIComponent(item.peluch_slug)}?cartItem=${item.peluch_id}-${item.size_id}-${item.color_id}` : '/catalog'}
+                            href={item.peluch_slug ? `/peluches/${encodeURIComponent(item.peluch_slug)}?cartItem=${encodeURIComponent(item.cart_line_id)}` : '/catalog'}
                             style={{ color: 'var(--coral)', fontWeight: 700, textDecoration: 'underline' }}
                           >Volver a personalizar {item.title}</Link>}
                         </div>

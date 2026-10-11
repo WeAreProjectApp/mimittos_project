@@ -158,3 +158,67 @@ test.describe('Shopping Cart', () => {
     await expect(subtotal(page)).toHaveText('Subtotal productos$140.000');
   });
 });
+
+
+async function addNamedSiblings(page: Page) {
+  const product = { ...BEAR, has_huella: true, has_corazon: true, huella_extra_cost: 15000, corazon_extra_cost: 12000 }
+  await mockCatalog(page)
+  await page.route('**/api/peluches/oso-coral-prueba/', route => route.fulfill({ json: product }))
+  await page.goto('/catalog')
+  await page.getByRole('link', { name: new RegExp(product.title) }).click()
+  await page.getByPlaceholder('Escribe el nombre aquí...').fill('Luna')
+  await page.getByPlaceholder('Una frase especial (máx. 50 caracteres)').fill('Para Luna')
+  await page.getByRole('button', { name: /^Agregar/ }).click()
+  await expect(page.getByText('¡Agregado al carrito!')).toHaveText('¡Agregado al carrito!')
+  await page.getByPlaceholder('Escribe el nombre aquí...').fill('Sol')
+  await page.getByPlaceholder('Una frase especial (máx. 50 caracteres)').fill('Para Sol')
+  await page.getByRole('button', { name: /^Agregar/ }).click()
+  await page.getByRole('link', { name: 'Carrito', exact: true }).click()
+  const luna = page.getByRole('group', { name: `${product.title} Nombre: Luna · Corazón: Para Luna`, exact: true })
+  const sol = page.getByRole('group', { name: `${product.title} Nombre: Sol · Corazón: Para Sol`, exact: true })
+  await expect(page.getByTestId('cart-item-11-21-31')).toHaveCount(2)
+  return { luna, sol }
+}
+
+// Catches a quantity control changing both named siblings of one SKU.
+test('changes only the selected sibling quantity', { tag: [...CART_UPDATE_QTY, '@outcome:success'] }, async ({ page }) => {
+  const { luna, sol } = await addNamedSiblings(page)
+  const original = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
+  await sol.getByRole('button', { name: '+', exact: true }).click()
+
+  await expect(sol.getByRole('button', { name: '+', exact: true }).locator('..').getByText('2', { exact: true })).toHaveText('2')
+  await expect(luna.getByRole('button', { name: '+', exact: true }).locator('..').getByText('1', { exact: true })).toHaveText('1')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)).toEqual([original[0], { ...original[1], quantity: 2 }])
+})
+
+// Catches hydration changing identities or personalized quantities on the next reload.
+test('keeps sibling identities after two cart reloads', { tag: [...CART_PERSIST, '@outcome:success'] }, async ({ page }) => {
+  const { luna, sol } = await addNamedSiblings(page)
+  await sol.getByRole('button', { name: '+', exact: true }).click()
+  await expect(sol.getByRole('button', { name: '+', exact: true }).locator('..').getByText('2', { exact: true })).toHaveText('2')
+  const original = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!))
+  expect(original.state.items.map((line: { cart_line_id: string }) => line.cart_line_id)).toEqual([
+    expect.stringMatching(/^cl_[0-9a-f-]{36}$/), expect.stringMatching(/^cl_[0-9a-f-]{36}$/),
+  ])
+  expect(original.state.items[0].cart_line_id).not.toBe(original.state.items[1].cart_line_id)
+  await page.reload()
+
+  await expect(sol).toContainText('Nombre: Sol')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!))).toEqual(original)
+  await page.reload()
+  await expect(luna).toContainText('Nombre: Luna')
+  await expect(sol.getByRole('button', { name: '+', exact: true }).locator('..').getByText('2', { exact: true })).toHaveText('2')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!))).toEqual(original)
+})
+
+// Catches deleting one personalized peluch also deleting its same-SKU sibling.
+test('removes only the selected sibling', { tag: [...CART_REMOVE, '@outcome:success'] }, async ({ page }) => {
+  const { luna, sol } = await addNamedSiblings(page)
+  const original = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
+  await luna.getByRole('button', { name: 'Eliminar', exact: true }).click()
+
+  await expect(luna).toHaveCount(0)
+  await expect(sol).toContainText('Corazón: Para Sol')
+  await expect(subtotal(page)).toHaveText('Subtotal productos$107.000')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)).toEqual([original[1]])
+})

@@ -37,6 +37,10 @@ test.describe('Checkout Flow', () => {
         localStorage.setItem('cart', JSON.stringify({ state: { items }, version: 0 }))
       }, originalItems)
       await page.reload()
+      const hydratedItems = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
+      expect(hydratedItems).toEqual(originalItems.map(item => expect.objectContaining(item)))
+      expect(hydratedItems[0].cart_line_id).toMatch(/^cl_[0-9a-f-]{36}$/)
+      expect(hydratedItems[1].cart_line_id).not.toBe(hydratedItems[0].cart_line_id)
       const failedLine = page.getByTestId('cart-item-2-2-1')
       await failedLine.getByRole('button', { name: '+', exact: true }).click()
       await page.getByRole('link', { name: 'Continuar al checkout', exact: true }).click()
@@ -58,7 +62,7 @@ test.describe('Checkout Flow', () => {
         expect.objectContaining({ peluch_id: 2, quantity: 11 }),
       ])
       const rejectedCart = await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)
-      expect(rejectedCart).toEqual([originalItems[0], { ...originalItems[1], quantity: 11 }])
+      expect(rejectedCart).toEqual([hydratedItems[0], { ...hydratedItems[1], quantity: 11 }])
 
       await recoveryLink.click()
       await page.getByTestId('cart-item-2-2-1').getByRole('button', { name: '−', exact: true }).click()
@@ -71,6 +75,7 @@ test.describe('Checkout Flow', () => {
       await page.getByRole('button', { name: /Ir a pagar/ }).click()
 
       await expect(page).toHaveURL(/\/payment\?order=MMT-QUANTITY&amount=480000&guest=1$/)
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cart')!).state.items)).toEqual(hydratedItems)
       expect(attempts[1].items).toEqual([
         expect.objectContaining({ peluch_id: 1, quantity: 2 }),
         expect.objectContaining({ peluch_id: 2, quantity: 10 }),
