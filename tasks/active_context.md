@@ -5,6 +5,54 @@ description: Current work focus, recent changes, active decisions, and next step
 
 # Active Context — Mimittos
 
+## Ronda transversal r5 — 2026-10-10
+
+La ronda `improvement-20261010-r5` parte de `main`
+`14a310a58d883ba191607faf2d5c38ffd8392c3d` y selecciona tres causas. El carrito
+deja de identificar una línea sólo por producto/talla/color: configuraciones
+distintas conservan sus propias cantidades, textos y capacidades de medios
+(`I-M-9668da267913`). El detalle administrativo sólo publica la respuesta del
+pedido vigente (`I-O-532fcbbffd28`). La cinta bloquea edición y guardado hasta
+una lectura válida y permite reintentar una lectura fallida
+(`I-O-ff31c1101cab`).
+
+La identidad `cart_line_id` es local, estable y aditiva. El almacenamiento
+`cart` conserva versión 0: la hidratación repara identidades ausentes o
+duplicadas sin fusionar líneas ni perder su contenido. Agregar fusiona sólo
+configuraciones y cotizaciones iguales; editar no fusiona hermanos. Los enlaces
+antiguos ambiguos requieren elegir una línea. El payload de pedido excluye
+esa identidad local y conserva las capacidades de sus archivos.
+
+Mantenibilidad y observabilidad poseen aplicación y unitarios; mantenibilidad
+también posee los E2E del carrito. QA posee los E2E de backoffice y los tres
+derivados de flujos, y coordina una aceptación combinada. Cada frente trabaja
+en una rama y worktree propios. El orquestador sólo integra y actualiza estos
+dos documentos operativos; no implementa frentes.
+
+La aceptación exige casos reales sobre el contenido final limpio, servidores
+locales aislados con frontera HTTP controlada, gate y CI. Estado, SHA probado,
+PR y artefactos se conservan en el registro local de la ronda
+`/tmp/mimittos-improvement-10102026-r5/`; no se publican cambios en toolkit.
+El merge lo conduce merge-queue y el cierre se comprueba con
+`all-in-base --check-only`. No hay deploy ni uso de la base de producción.
+
+Quedan elegibles pero fuera del cupo: resultados visibles de crear/editar/borrar
+categorías y recuperación de un PUT fallido de cinta. Banco continúa bloqueado
+por su contrato pendiente; Wompi y autenticación responsive mantienen evidencia
+pendiente. No se certifica madurez global ni rendimiento vivo. La documentación
+histórica de pruebas no sustituye la evidencia final de esta ronda.
+
+## Cierre de rondas anteriores — 2026-10-10
+
+Los PR #101–#103, #105–#109, #111–#115 y #117–#119 ya están integrados; no
+son trabajo pendiente ni ramas para reutilizar. R4 cerró con el enlace de
+registro invitado correcto, descarte de borradores recuperable y analytics
+que conserva el último filtro. Sus PR #117–#119 quedaron verdes, y el árbol
+de `main` en `14a310a` coincide con el tren probado `48b94bf`. La aceptación
+local acredita 66 casos útiles: 11 backend, 46 unitarios y nueve E2E.
+Las 32 brechas parciales históricas siguen abiertas. El borrador #120 se
+cerró sin merge. El clon de deploy permanece a cargo del deploy, no de esta ronda.
+
 ## Ronda transversal r2 — 2026-10-10
 
 Ronda `improvement-20261010-r2`, base examinada
@@ -26,11 +74,12 @@ pasar sin acciones con catálogo vacío o retroceder demasiado pronto. Sólo
 cambia ese caso; no es otra mejora de aplicación. Su ejecución útil local
 no se acredita: el tren/CI debe aportar catálogo scratch y probarlo.
 
-Los PR #105–#109 están abiertos. El conductor informó #105/#106/#108/#109
-verdes antes del cierre y #107 rojo por navegación. El nuevo SHA necesita
-revalidación de comprobaciones afectadas y CI: **aceptación del árbol final
-pendiente**. Los frentes conservan propiedad de aplicación/tests; QA sólo
-escribe sus cinco documentos y el caso de navegación autorizado. Sin servidor
+Los PR #105–#109 ya están integrados, incluido el cierre que corrige el
+retroceso del navegador. Los conteos del commit intermedio anterior describen
+ese contenido, no todas las revisiones posteriores. La entrega final se
+contrasta con los PR y el archivo de evidencias de R2; no queda una integración
+pendiente de esa ronda. Los frentes conservaron propiedad de aplicación/tests;
+QA escribió sus documentos y el caso de navegación autorizado. Sin servidor
 backend permanente, config global, servicio, migraciones operativas, seeds,
 SMTP real o pago. Reporte: `docs/audits/2026-10-10-mimittos-improvement-pass-r2.md`.
 
