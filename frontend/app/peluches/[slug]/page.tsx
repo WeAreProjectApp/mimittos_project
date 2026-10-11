@@ -2,16 +2,16 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { mediaService } from '@/lib/services/mediaService'
 import { peluchService } from '@/lib/services/peluchService'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { useCartStore } from '@/lib/stores/cartStore'
+import { describeCartPersonalization, useCartStore } from '@/lib/stores/cartStore'
 import { usePageView } from '@/lib/hooks/usePageView'
 import { computeDeposit } from '@/lib/utils/pricing'
-import type { CartItem, PeluchDetail, PeluchSizePrice, Review } from '@/lib/types'
+import type { CartItem, CartLine, PeluchDetail, PeluchSizePrice, Review } from '@/lib/types'
 
 const BADGE_LABELS: Record<string, string> = {
   bestseller: 'Más vendido',
@@ -70,8 +70,13 @@ function flattenSpecs(s: unknown): Array<[string, string]> {
 }
 
 export default function PeluchDetailPage() {
+  return <Suspense fallback={<main>Cargando...</main>}><PeluchDetailContent /></Suspense>
+}
+
+function PeluchDetailContent() {
   const { slug } = useParams() as { slug: string }
   const router = useRouter()
+  const recoveryKey = useSearchParams().get('cartItem')
   const addToCart = useCartStore((s) => s.addToCart)
   const updatePersonalization = useCartStore((s) => s.updatePersonalization)
   const cartItems = useCartStore((s) => s.items)
@@ -98,7 +103,16 @@ export default function PeluchDetailPage() {
   const [activeTab, setActiveTab] = useState(0)
   const [activeImg, setActiveImg] = useState(0)
   const [addedToast, setAddedToast] = useState(false)
-  const [editingItem, setEditingItem] = useState<CartItem | null>(null)
+  const [editingItem, setEditingItem] = useState<CartLine | null>(null)
+
+  const [recoveryError, setRecoveryError] = useState('')
+  const recoveryCandidates = useMemo(() => recoveryKey === null ? [] : cartItems.filter((line) =>
+    line.peluch_slug === slug && (line.cart_line_id === recoveryKey ||
+      `${line.peluch_id}-${line.size_id}-${line.color_id}` === recoveryKey)
+  ), [cartItems, slug, recoveryKey])
+  const missingRecovery = recoveryKey !== null && recoveryCandidates.length === 0
+  const ambiguousRecovery = recoveryCandidates.length > 1
+  const recoveryBlocked = missingRecovery || ambiguousRecovery || !!recoveryError
 
   // Huella
   const [huellaType, setHuellaType] = useState<'name' | 'date' | 'letter' | 'image'>('name')
@@ -137,17 +151,19 @@ export default function PeluchDetailPage() {
 
   useEffect(() => {
     if (!peluch) return
-    const itemKey = new URLSearchParams(window.location.search).get('cartItem')
-    const item = cartItems.find((line) =>
-      line.peluch_slug === slug && `${line.peluch_id}-${line.size_id}-${line.color_id}` === itemKey
-    )
+    setEditingItem(null)
+    setRecoveryError('')
+    const item = recoveryCandidates.length === 1 ? recoveryCandidates[0] : null
     if (!item) return
     const sizes = peluch.size_prices
       .filter((sp) => sp.is_available)
       .sort((a, b) => parseInt(a.size.cm, 10) - parseInt(b.size.cm, 10))
     const sizeIndex = sizes.findIndex((sp) => sp.size.id === item.size_id)
     const colorIndex = peluch.available_colors.findIndex((color) => color.id === item.color_id)
-    if (sizeIndex < 0 || colorIndex < 0) return
+    if (sizeIndex < 0 || colorIndex < 0) {
+      setRecoveryError('Este producto ya no está en tu carrito. Vuelve al carrito para continuar.')
+      return
+    }
     setEditingItem(item)
     setActiveSizeIdx(sizeIndex)
     setActiveColorIdx(colorIndex)
@@ -159,7 +175,9 @@ export default function PeluchDetailPage() {
     setCorazonPhrase(item.has_corazon ? item.corazon_phrase : '')
     setAudioMediaId(item.has_audio ? item.audio_media_id : null)
     setAudioMediaToken(item.has_audio ? item.audio_media_token ?? null : null)
-  }, [peluch, slug, cartItems])
+    setAudioFileName('')
+    setAudioMeta(null)
+  }, [peluch, recoveryCandidates])
 
   if (loading) {
     return (
@@ -263,7 +281,7 @@ export default function PeluchDetailPage() {
   }
 
   function handleAdd() {
-    if (!peluch || !activeSizePrice || !activeColor) return
+    if (!peluch || !activeSizePrice || !activeColor || recoveryBlocked || (recoveryKey !== null && !editingItem)) return
 
     const cartItem: CartItem = {
       peluch_id: peluch.id,
@@ -295,7 +313,10 @@ export default function PeluchDetailPage() {
     }
 
     if (editingItem) {
-      updatePersonalization(cartItem)
+      if (!updatePersonalization(editingItem.cart_line_id, cartItem)) {
+        setRecoveryError('Este producto ya no está en tu carrito. Vuelve al carrito para continuar.')
+        return
+      }
       router.push('/checkout')
       return
     }
@@ -339,6 +360,19 @@ export default function PeluchDetailPage() {
       </div>
 
       {/* Product wrap */}
+      {(missingRecovery || recoveryError) && <div role="alert" className="mx-auto px-4 sm:px-8 lg:px-10 py-4" style={{ maxWidth: 1360 }}>
+        <p>Este producto ya no está en tu carrito. Vuelve al carrito para continuar.</p>
+        <Link href="/cart">Volver al carrito</Link>
+      </div>}
+      {ambiguousRecovery && <section className="mx-auto px-4 sm:px-8 lg:px-10 py-4" style={{ maxWidth: 1360 }}>
+        <p role="alert">Este enlace corresponde a varios peluches del carrito. Elige el que quieres volver a personalizar.</p>
+        {recoveryCandidates.map((line, index) => <Link key={line.cart_line_id}
+          href={`/peluches/${encodeURIComponent(slug)}?cartItem=${encodeURIComponent(line.cart_line_id)}`}
+          style={{ display: 'block', marginTop: 12, overflowWrap: 'anywhere' }}>
+          Personalizar peluche {index + 1}: {describeCartPersonalization(line).join(' · ') || line.title}
+        </Link>)}
+      </section>}
+
       <div className="mx-auto px-4 sm:px-8 lg:px-10 pb-16 grid lg:grid-cols-2 gap-8 lg:gap-14" style={{ maxWidth: 1360, alignItems: 'flex-start' }}>
 
         {/* Gallery */}
@@ -499,7 +533,7 @@ export default function PeluchDetailPage() {
                   )}
                   {huellaType === 'image' && (
                     <div>
-                      <input ref={huellaInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleHuellaImageUpload(e.target.files[0])} />
+                      <input ref={huellaInputRef} data-testid="huella-upload-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleHuellaImageUpload(e.target.files[0])} />
                       <button
                         type="button"
                         onClick={() => huellaInputRef.current?.click()}
@@ -593,7 +627,7 @@ export default function PeluchDetailPage() {
             </div>
             <button
               onClick={handleAdd}
-              disabled={!activeSizePrice || !activeColor || huellaUploading || audioUploading}
+              disabled={!activeSizePrice || !activeColor || huellaUploading || audioUploading || recoveryBlocked || (recoveryKey !== null && !editingItem)}
               style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'var(--coral)', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 15, boxShadow: '0 8px 22px rgba(212,132,138,.35)', transition: 'all .2s', border: 'none', cursor: 'pointer', padding: '0 24px' }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>

@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 
 jest.mock('../../../lib/stores/cartStore', () => ({
   useCartStore: jest.fn(),
+  describeCartPersonalization: jest.requireActual('../../../lib/stores/cartStore').describeCartPersonalization,
   lineTotal: jest.fn((item: any) => (item.unit_price + item.personalization_cost) * item.quantity),
   calcDeposit: jest.fn(() => 0),
   calcShipping: jest.fn(() => 0),
@@ -32,6 +33,7 @@ const futureExpiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISO
 const AUDIO_RETRY_MESSAGE = 'Vuelve a subir el audio de este peluche para completar tu pedido.'
 
 const peluchItem = {
+  cart_line_id: 'cl_00000000-0000-4000-8000-000000000001',
   peluch_id: 1, peluch_slug: 'osito-coral', title: 'Osito Coral',
   size_id: 2, size_label: 'Mediano',
   color_id: 1, color_name: 'Rosa Coral', color_hex: '#D4848A',
@@ -200,7 +202,7 @@ describe('CheckoutPage', () => {
     const clearCart = jest.fn()
     const unaffectedItem = { ...peluchItem, quantity: 1 }
     const failedItem = {
-      ...peluchItem, peluch_id: 2, peluch_slug: 'conejo-lila', title: 'Conejo Lila',
+      ...peluchItem, cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 2, peluch_slug: 'conejo-lila', title: 'Conejo Lila',
       size_id: 5, size_label: 'Grande', color_id: 7, color_name: 'Lila', quantity: 2,
     }
     setCartState({ items: [unaffectedItem, failedItem], clearCart })
@@ -217,7 +219,7 @@ describe('CheckoutPage', () => {
 
     expect(await screen.findByText('Actualiza los archivos de los productos indicados para continuar. Tu carrito se conserva.')).toBeInTheDocument()
     const recoveryLink = screen.getByRole('link', { name: 'Volver a personalizar Conejo Lila' })
-    expect(recoveryLink).toHaveAttribute('href', '/peluches/conejo-lila?cartItem=2-5-7')
+    expect(recoveryLink).toHaveAttribute('href', '/peluches/conejo-lila?cartItem=cl_00000000-0000-4000-8000-000000000002')
     expect(recoveryLink.parentElement).toHaveTextContent(AUDIO_RETRY_MESSAGE)
     expect(screen.queryByRole('link', { name: 'Volver a personalizar Osito Coral' })).not.toBeInTheDocument()
     expect(mockOrderService.createOrder).toHaveBeenCalledWith(expect.objectContaining({ items: [
@@ -244,7 +246,7 @@ describe('CheckoutPage', () => {
     const clearCart = jest.fn()
     const push = jest.fn()
     mockUseRouter.mockReturnValue({ push })
-    const failedItem = { ...peluchItem, peluch_id: 2, title: 'Conejo Lila', quantity: 11 }
+    const failedItem = { ...peluchItem, cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', peluch_id: 2, title: 'Conejo Lila', quantity: 11 }
     setCartState({ items: [peluchItem, failedItem], clearCart })
     mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items } } })
 
@@ -282,7 +284,7 @@ describe('CheckoutPage', () => {
 
     expect(await screen.findByRole('link', { name: 'Revisar Osito Coral en el carrito' })).toHaveAttribute('href', '/cart')
     const mediaLink = screen.getByRole('link', { name: 'Volver a personalizar Osito Coral' })
-    expect(mediaLink).toHaveAttribute('href', '/peluches/osito-coral?cartItem=1-2-1')
+    expect(mediaLink).toHaveAttribute('href', '/peluches/osito-coral?cartItem=cl_00000000-0000-4000-8000-000000000001')
     expect(mediaLink.parentElement).toHaveTextContent(AUDIO_RETRY_MESSAGE)
     expect(clearCart).not.toHaveBeenCalled()
   })
@@ -299,4 +301,23 @@ describe('CheckoutPage', () => {
 
     expect(await screen.findByLabelText(label)).toHaveStyle({ fontSize: '16px' })
   })
+
+it('links the rejected named sibling by its stable identity', async () => {
+  // Catches recovery choosing the first SKU match instead of the rejected Sol line.
+  jest.spyOn(HTMLFormElement.prototype, 'checkValidity').mockReturnValue(true)
+  jest.spyOn(HTMLFormElement.prototype, 'reportValidity').mockReturnValue(true)
+  const luna = { ...peluchItem, has_huella: true, huella_type: 'name', huella_text: 'Luna' }
+  const sol = { ...luna, cart_line_id: 'cl_00000000-0000-4000-8000-000000000002', huella_text: 'Sol' }
+  setCartState({ items: [luna, sol], clearCart: jest.fn() })
+  mockOrderService.createOrder.mockRejectedValueOnce({ response: { data: { items: { 1: { audio_media_id: [AUDIO_RETRY_MESSAGE] } } } } })
+  await act(async () => { render(<CheckoutPage />) })
+  fireEvent.click(await screen.findByRole('checkbox'))
+  await act(async () => { fireEvent.submit(screen.getByRole('button', { name: /Ir a pagar/i }).closest('form')!) })
+
+  expect(await screen.findByRole('link', { name: 'Volver a personalizar Osito Coral' })).toHaveAttribute('href', '/peluches/osito-coral?cartItem=cl_00000000-0000-4000-8000-000000000002')
+  expect(screen.getByRole('group', { name: 'Osito Coral Nombre: Luna' })).toHaveTextContent('Nombre: Luna')
+  expect(screen.getByRole('group', { name: 'Osito Coral Nombre: Sol' })).toHaveTextContent(AUDIO_RETRY_MESSAGE)
+  expect(mockOrderService.createOrder).toHaveBeenCalledWith(expect.objectContaining({ items: [luna, sol] }))
+})
+
 })

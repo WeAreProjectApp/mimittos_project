@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from '@jest/globals'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 jest.mock('@/lib/services/orderService', () => ({
@@ -362,5 +362,101 @@ describe('PedidosAdminPage', () => {
 
     expect(mockGetOrderDetail).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('order detail request lifecycle', () => {
+  const secondOrder = { ...sampleOrder, order_number: 'MIM-002', customer_name: 'Cliente B' }
+  const secondDetail = {
+    ...sampleOrderDetail, ...secondOrder, address: 'Dirección B',
+    items: [{ ...sampleOrderDetail.items[0], peluch_title: 'Peluche B', has_corazon: true, corazon_phrase: 'Frase B' }],
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockListOrders.mockResolvedValue(ordersPage([sampleOrder, secondOrder]))
+  })
+
+  async function switchOrders(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByTestId('order-row-MIM-001'))
+    await screen.findByText('Cargando detalle…')
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }))
+    await user.click(screen.getByTestId('order-row-MIM-002'))
+    return screen.getByRole('dialog', { name: 'Detalle del pedido MIM-002' })
+  }
+
+  it('keeps the selected order details after a previous order resolves late', async () => {
+    const first = deferred<typeof sampleOrderDetail>()
+    const second = deferred<typeof secondDetail>()
+    mockGetOrderDetail.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const user = userEvent.setup()
+    await act(async () => { render(<PedidosAdminPage />) })
+    const dialog = await switchOrders(user)
+
+    await act(async () => { second.resolve(secondDetail) })
+    await act(async () => { first.resolve(sampleOrderDetail) })
+
+    expect(dialog).toHaveTextContent('Cliente B')
+    expect(dialog).toHaveTextContent('Dirección B')
+    expect(dialog).toHaveTextContent('Frase B')
+    expect(dialog).not.toHaveTextContent('María García')
+    expect(dialog).not.toHaveTextContent('Osito Coral')
+  })
+
+  it.each([
+    { outcome: 'resolves', settle: (request: ReturnType<typeof deferred<typeof sampleOrderDetail>>) => request.resolve(sampleOrderDetail) },
+    { outcome: 'rejects', settle: (request: ReturnType<typeof deferred<typeof sampleOrderDetail>>) => request.reject(new Error('old request')) },
+  ])('keeps the current loading state when the old request $outcome', async ({ settle }) => {
+    const first = deferred<typeof sampleOrderDetail>()
+    const second = deferred<typeof secondDetail>()
+    mockGetOrderDetail.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const user = userEvent.setup()
+    await act(async () => { render(<PedidosAdminPage />) })
+    const dialog = await switchOrders(user)
+
+    await act(async () => { settle(first) })
+
+    expect(within(dialog).getByText('Cargando detalle…')).toBeVisible()
+    expect(dialog).not.toHaveTextContent('No se pudo cargar el detalle del pedido.')
+    expect(dialog).not.toHaveTextContent('María García')
+    await act(async () => { second.resolve(secondDetail) })
+    expect(dialog).toHaveTextContent('Cliente B')
+  })
+
+  it('preserves the current request error after an obsolete success', async () => {
+    const first = deferred<typeof sampleOrderDetail>()
+    const second = deferred<typeof secondDetail>()
+    mockGetOrderDetail.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const user = userEvent.setup()
+    await act(async () => { render(<PedidosAdminPage />) })
+    const dialog = await switchOrders(user)
+
+    await act(async () => { second.reject(new Error('current failure')) })
+    await act(async () => { first.resolve(sampleOrderDetail) })
+
+    expect(within(dialog).getByText('No se pudo cargar el detalle del pedido.')).toBeVisible()
+    expect(dialog).not.toHaveTextContent('Cargando detalle…')
+    expect(dialog).not.toHaveTextContent('María García')
+    await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps a reopened order loading until its new request completes', async () => {
+    const first = deferred<typeof sampleOrderDetail>()
+    const reopened = deferred<typeof sampleOrderDetail>()
+    mockGetOrderDetail.mockReturnValueOnce(first.promise).mockReturnValueOnce(reopened.promise)
+    const user = userEvent.setup()
+    await act(async () => { render(<PedidosAdminPage />) })
+    await user.click(await screen.findByTestId('order-row-MIM-001'))
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }))
+    await user.click(screen.getByTestId('order-row-MIM-001'))
+
+    await act(async () => { first.resolve(sampleOrderDetail) })
+
+    expect(screen.getByText('Cargando detalle…')).toBeVisible()
+    expect(screen.queryByText('Osito Coral')).not.toBeInTheDocument()
+    await act(async () => { reopened.resolve(sampleOrderDetail) })
+    expect(screen.getByRole('dialog')).toHaveTextContent('Osito Coral')
   })
 })

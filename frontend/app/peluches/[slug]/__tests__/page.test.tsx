@@ -1,5 +1,8 @@
+import { useRouter, useSearchParams } from 'next/navigation'
+import { mockCartItems } from '../../../../lib/__tests__/fixtures'
+import type { CartItem } from '../../../../lib/types'
 import { describe, it, expect, beforeEach } from '@jest/globals'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import PeluchDetailPage from '../page'
@@ -29,9 +32,11 @@ jest.mock('../../../../lib/stores/authStore', () => ({
 
 jest.mock('../../../../lib/stores/cartStore', () => ({
   useCartStore: jest.fn(),
+  describeCartPersonalization: jest.requireActual('../../../../lib/stores/cartStore').describeCartPersonalization,
 }))
 
 jest.mock('next/navigation', () => ({
+  useSearchParams: jest.fn(() => new URLSearchParams()),
   useParams: jest.fn(() => ({ slug: 'osito-coral' })),
   useRouter: jest.fn(() => ({ push: jest.fn() })),
   usePathname: jest.fn(() => '/peluches/osito-coral'),
@@ -73,6 +78,7 @@ const mockPeluchDetail = {
 describe('PeluchDetailPage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams())
     mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
     mockUseCartStore.mockImplementation((selector: (s: any) => unknown) =>
       selector({ addToCart: jest.fn(), items: [] })
@@ -268,4 +274,89 @@ describe('PeluchDetailPage', () => {
 
     expect(screen.getByAltText('Osito Coral')).toHaveAttribute('src', 'http://example.com/rojo.jpg')
   })
+})
+
+
+async function renderRecoveryPage() {
+  let view!: ReturnType<typeof render>
+  await act(async () => { view = render(<PeluchDetailPage />) })
+  return view
+}
+
+const recoveryId = 'cl_00000000-0000-4000-8000-000000000001'
+const siblingId = 'cl_00000000-0000-4000-8000-000000000002'
+function recoverySetup(key: string, items: unknown[], save: (cartLineId: string, item: CartItem) => boolean = jest.fn(() => true)) {
+  jest.clearAllMocks()
+  mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
+  const push = jest.fn()
+  ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams({ cartItem: key }))
+  ;(useRouter as jest.Mock).mockReturnValue({ push })
+  mockUseCartStore.mockImplementation((selector: (state: any) => unknown) => selector({ items, addToCart: jest.fn(), updatePersonalization: save }))
+  mockPeluchService.getPeluchBySlug.mockResolvedValue(mockPeluchDetail)
+  mockPeluchService.getReviews.mockResolvedValue([])
+  return { push, save }
+}
+const recoveryLine = { ...mockCartItems[0], cart_line_id: recoveryId, quantity: 2, has_huella: true, huella_type: 'name' as const, huella_text: 'Luna' }
+
+it('recovers an exact stable identity among identical SKUs', async () => {
+  // Catches recovery loading Luna while the URL names Sol.
+  const sol = { ...recoveryLine, cart_line_id: siblingId, huella_text: 'Sol' }
+  const { save, push } = recoverySetup(siblingId, [recoveryLine, sol])
+  await renderRecoveryPage()
+  expect(screen.getByDisplayValue('Sol')).toHaveValue('Sol')
+  fireEvent.change(screen.getByPlaceholderText('Escribe el nombre aquí...'), { target: { value: 'Estrella' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar personalización' }))
+
+  expect(save).toHaveBeenCalledWith(siblingId, expect.objectContaining({ huella_text: 'Estrella', quantity: 2 }))
+  expect(push).toHaveBeenCalledWith('/checkout')
+})
+
+it('keeps a unique legacy recovery link working', async () => {
+  // Catches old saved links failing after identity becomes local to a cart line.
+  recoverySetup('1-2-1', [recoveryLine])
+  await renderRecoveryPage()
+
+  expect(screen.getByDisplayValue('Luna')).toHaveValue('Luna')
+  expect(screen.getByRole('button', { name: 'Guardar personalización' })).not.toBeDisabled()
+})
+
+it('requires selection for an ambiguous legacy recovery link', async () => {
+  // Catches ambiguous old links overwriting the first sibling automatically.
+  recoverySetup('1-2-1', [recoveryLine, { ...recoveryLine, cart_line_id: siblingId, huella_text: 'Sol' }])
+  await renderRecoveryPage()
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Este enlace corresponde a varios peluches del carrito. Elige el que quieres volver a personalizar.')
+  expect(screen.getByRole('link', { name: 'Personalizar peluche 2: Nombre: Sol' })).toHaveAttribute('href', `/peluches/osito-coral?cartItem=${siblingId}`)
+  expect(screen.getByRole('button', { name: /Agregar/ })).toBeDisabled()
+})
+
+it('shows the cart link for an absent recovery identity', async () => {
+  // Catches a stale recovery URL silently creating another line.
+  recoverySetup('cl_missing', [recoveryLine])
+  await renderRecoveryPage()
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Este producto ya no está en tu carrito. Vuelve al carrito para continuar.')
+  expect(screen.getByRole('link', { name: 'Volver al carrito' })).toHaveAttribute('href', '/cart')
+  expect(screen.getByRole('button', { name: /Agregar/ })).toBeDisabled()
+})
+
+it('does not navigate after an absent identity rejects the save', async () => {
+  // Catches the UI displaying success after the store updated no line.
+  const { push } = recoverySetup(recoveryId, [recoveryLine], jest.fn(() => false))
+  await renderRecoveryPage()
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar personalización' }))
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Este producto ya no está en tu carrito. Vuelve al carrito para continuar.')
+  expect(push).toHaveBeenCalledTimes(0)
+})
+
+it('reacts to a different identity on the same product route', async () => {
+  // Catches query-only navigation retaining the previous sibling's personalization.
+  recoverySetup(recoveryId, [recoveryLine, { ...recoveryLine, cart_line_id: siblingId, huella_text: 'Sol' }])
+  const { rerender } = await renderRecoveryPage()
+  expect(screen.getByDisplayValue('Luna')).toHaveValue('Luna')
+  ;(useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams({ cartItem: siblingId }))
+  act(() => { rerender(<PeluchDetailPage />) })
+
+  expect(screen.getByDisplayValue('Sol')).toHaveValue('Sol')
 })

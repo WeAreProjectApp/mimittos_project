@@ -106,6 +106,7 @@ export type PeluchDetail = Peluch & {
 // ── Carrito ───────────────────────────────────────────────────────────────────
 
 export type CartItem = {
+  cart_line_id?: string
   peluch_id: number
   peluch_slug: string
   title: string
@@ -133,6 +134,8 @@ export type CartItem = {
   free_shipping: boolean
   shipping_cost: number
 }
+
+export type CartLine = CartItem & { cart_line_id: string }
 
 export type PaymentMode = 'deposit' | 'full'
 
