@@ -4,8 +4,82 @@
 
 Use this document to understand each flow's steps, branching conditions, role restrictions, and API contracts before writing or reviewing E2E tests.
 
-**Version:** 1.5.12
-**Last Updated:** 2026-10-10
+**Version:** 1.5.13
+**Last Updated:** 2026-10-11
+
+## Revisión dirigida r5 — 2026-10-11
+
+El registro se limita a la identidad de líneas de carrito, la vigencia del
+detalle administrativo y la lectura previa de la cinta. La autoría parte de
+`14a310a58d883ba191607faf2d5c38ffd8392c3d`; las ejecuciones de aceptación se
+deben realizar sobre el commit limpio del tren combinado. Los casos descritos
+fijan criterios de aceptación: las etiquetas no acreditan cobertura. El estado,
+SHA probado, PR y artefactos se consultan en el registro local de la ronda
+`/tmp/mimittos-improvement-10102026-r5/`, indicado en
+[tasks/active_context.md](../tasks/active_context.md).
+Se mantienen las brechas históricas, categorías y el fallo o bloqueo del PUT
+de cinta fuera del alcance aprobado.
+
+### Roles y convenciones r5
+
+- Visitante o cliente: configura y conserva cada peluche antes de enviar el
+  pedido. Nombre, frase y archivos son parte de la configuración ya ofrecida.
+- Personal administrativo: consulta el detalle vigente y recupera manualmente
+  la lectura de la cinta antes de poder editarla.
+- Los mocks se restringen a HTTP y almacenamiento. Los resultados deben ser
+  visibles después de completar las respuestas retenidas, sin esperas de
+  duración arbitraria. El payload de pedido complementa la navegación visible.
+- Los test IDs de carrito conservan el SKU y se acotan por la personalización
+  visible. La identidad local estable gobierna mutaciones, claves y enlaces de
+  recuperación; nunca se envía como dato de pedido.
+
+### Visitante o cliente — matriz r5
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Agregar el mismo producto/talla/color para Luna y Sol con frases distintas | success | Se conservan dos líneas y ambas configuraciones llegan al pedido, sin ID local en el payload. |
+| Cambiar cantidad o eliminar una línea entre hermanos del mismo SKU | success | Sólo cambia la línea elegida; el hermano conserva configuración, cantidad e importe. |
+| Recargar dos veces tras cambiar una cantidad | display | Se conservan las dos configuraciones, cantidades e identidades. La normalización mantiene almacenamiento `cart`, versión 0, sin borrar o fusionar líneas válidas. |
+| Recuperar el archivo rechazado de una línea entre hermanos del mismo SKU | error · success | El enlace identifica la línea afectada; el reemplazo conserva al hermano y sólo transmite nuevas referencias/capacidades en la línea corregida. |
+| Fallar la subida durante esa recuperación | failure | El error y el reintento permanecen disponibles; ambas líneas conservan su configuración y cantidades. |
+
+La identidad no crea una validación de formulario ni una vista independiente.
+Los casos de fusión exacta, cotización, IDs faltantes/duplicados y normalización
+idempotente pertenecen a pruebas unitarias del store; no se inventan flujos UI
+para operaciones internas ni se promete recuperar personalizaciones ya perdidas.
+
+### Personal administrativo — matriz r5
+
+| Interacción | Clase | Resultado requerido |
+|---|---|---|
+| Abrir A, cerrar y abrir B; completar B antes que A | success | El diálogo de B conserva el cliente y dirección de B tras terminar A. |
+| Fallar A mientras B sigue pendiente | success | B sigue mostrando «Cargando detalle…», sin el error antiguo; después muestra los datos de B. |
+| Fallar la solicitud vigente de B | failure | El diálogo de B muestra «No se pudo cargar el detalle del pedido.», no muestra datos de A y permite cerrar. |
+| Abrir configuración con GET de cinta pendiente y luego editar/guardar | success | La región «Cinta de promoción» muestra «Cargando cinta…» y bloquea controles; tras leer los valores reales permite editar y el PUT correcto muestra «✓ Guardado». |
+| Fallar GET de cinta y pulsar «Reintentar carga» | failure · success | Muestra «No se pudo cargar la cinta de promoción. Intenta de nuevo.»; permanece bloqueada hasta leer los valores reales en el reintento manual. No emite PUT antes de una lectura válida. |
+
+`content_json={}` es una lectura válida y conserva los defaults actuales; se
+comprueba en unitarias. La imagen hero permanece independiente. El detalle no
+tiene validación local separada; su carga es un estado transitorio de abrirlo,
+no un nuevo outcome `display`. El fallo antiguo que se ignora no acredita
+`failure`: esa clase se exige a la solicitud vigente y al GET de cinta.
+
+### E2E Coverage Index — criterios y alcance de validación combinada r5
+
+| ID | Spec dueño | Casos dirigidos |
+|---|---|---|
+| `cart-add` | `frontend/e2e/app/peluch-detail.spec.ts` | Dos nombres/configuraciones del mismo SKU conservados hasta enviar el pedido. |
+| `cart-update-qty`, `cart-remove`, `cart-persist` | `frontend/e2e/app/cart.spec.ts` | Mutaciones de una sola línea y conservación tras dos recargas. |
+| `checkout-personalization-media-recovery` | `frontend/e2e/app/order-privacy-recovery.spec.ts` | Recuperación exitosa y fallo de subida entre hermanos del mismo SKU. |
+| `backoffice-order-detail` | `frontend/e2e/backoffice/backoffice-order-actions.spec.ts` | Dos órdenes de respuesta y error vigente; `success` y `failure` requieren datos/avisos visibles. |
+| `backoffice-promo-banner-save` | `frontend/e2e/backoffice/backoffice-config.spec.ts` | GET pendiente antes de guardar y recuperación manual tras GET fallido; no incluye fallo/bloqueo de PUT. |
+
+La adaptación de `frontend/e2e/app/checkout.spec.ts` conserva su comprobación
+del contenido persistido y la estabilidad de IDs tras corregir cantidad; no
+añade una causa ni aumenta los outcomes del checkout. Sólo se incorpora el
+nuevo ID/tag `backoffice-order-detail`. Las pruebas con frontera HTTP simulada
+acreditan comportamiento frontend; no acreditan persistencia Django, pagos ni
+cobertura completa del proyecto.
 
 ## Revisión dirigida r4 — 2026-10-10
 
@@ -140,7 +214,7 @@ backend del autor. Categorías continúa como deuda discrecional fuera de cupo.
 
 ---
 
-## Revisión dirigida r2 — 2026-10-10
+## Revisión dirigida r2 — 2026-10-11
 
 La revisión de `e2e-user-flows-check` cubre registro ante fallo de correo
 y ciclo de borradores administrativos; el cierre incorpora únicamente el
@@ -282,6 +356,7 @@ multipart pertenece a integración backend, no a un nuevo flujo de navegador.
 | `backoffice-login` | Staff Sign-In | backoffice | P2 | staff | `/sign-in` |
 | `backoffice-dashboard-display` | Backoffice Dashboard | backoffice | P2 | staff | `/backoffice` |
 | `backoffice-order-management` | Order Management | backoffice | P2 | staff | `/backoffice/pedidos` |
+| `backoffice-order-detail` | Current Order Detail | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-order-filter` | Filter Backoffice Orders by Status | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-order-pagination` | Paginate Backoffice Orders | backoffice | P2 | staff | `/backoffice/pedidos` |
 | `backoffice-peluch-list` | Peluch List | backoffice | P3 | staff | `/backoffice/peluches` |
@@ -1678,7 +1753,14 @@ Staff types a tracking number into the per-row input and clicks the **✓** butt
 | **Frontend route** | `/backoffice/configuracion` |
 | **API endpoints** | `PUT /api/content/promo_banner/` |
 
-Staff toggles **Activa**, edits the message (max 120 chars), and picks background/text colors (preset buttons or custom picker) on the configuración page, then clicks **Guardar cinta**. `contentService.update('promo_banner', { is_active, message, bg_color, text_color })` persists the JSON. The button cycles **Guardar → Guardando… → ✓ Guardado** (auto-resets after 3 s).
+El personal primero lee la cinta existente mediante GET. La región «Cinta de
+promoción» mantiene sus controles y guardado deshabilitados durante la carga
+y tras un fallo de lectura. El fallo muestra el aviso indicado en la matriz r5
+y «Reintentar carga»; sólo una lectura correcta habilita los valores recibidos.
+Un JSON vacío permite los defaults actuales. Después puede modificar mensaje
+(máx. 120 caracteres), estado y colores, y guardar mediante PUT con
+`is_active`, `message`, `bg_color` y `text_color`. El éxito muestra «✓ Guardado».
+La recuperación de PUT fallido/colgado no está cubierta por esta revisión.
 
 ### backoffice-hero-image-upload
 
@@ -1890,10 +1972,12 @@ Convenciones: `@flow` desde el registro y `@outcome` inline; fixtures de red con
 ### checkout-personalization-media-recovery
 
 A rejected huella/audio reference is displayed on its exact checkout line with
-**Volver a personalizar**. Recovery opens `/peluches/[slug]?cartItem=<peluch>-<size>-<color>`,
+**Volver a personalizar**. Recovery opens `/peluches/[slug]?cartItem=<cart_line_id>`,
 locks the existing product/variant/quantity and uploads the replacement. Save
 changes only personalization fields/cost and returns to checkout with the
-other cart lines intact. Upload or order failure remains visible.
+other cart lines intact, including siblings sharing the same product, size and
+color. The stable local identity is excluded from the order payload. Upload or
+order failure remains visible.
 
 ### app-peluch-audio
 
@@ -1965,7 +2049,7 @@ Acceptance uses 412×915, 835×1194, 1195×835, 1440×900 and 2560×1440 plus ro
 This flow does not certify Escape handling, focus return or touch-target size;
 those accessibility obligations remain open outside the approved change.
 
-## Revisión dirigida — registro, checkout y compra (2026-10-10)
+## Revisión dirigida — registro, checkout y compra (2026-10-11)
 
 Esta ronda revisa los tres contratos siguientes; no certifica las demás vistas.
 Conserva los outcomes y brechas anteriores de verificación y medios.

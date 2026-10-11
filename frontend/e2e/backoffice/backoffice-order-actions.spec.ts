@@ -5,6 +5,7 @@ import {
   BACKOFFICE_ORDER_FILTER,
   BACKOFFICE_ORDER_STATUS_UPDATE,
   BACKOFFICE_ORDER_TRACKING_UPDATE,
+  BACKOFFICE_ORDER_DETAIL,
 } from '../helpers/flow-tags';
 
 const adminUser = {
@@ -124,6 +125,127 @@ function createSupersededFilterRoute(initialOrders: typeof ordersList, shippedOr
     },
   };
 }
+
+const DETAIL_A = 'PELUCH-DETAIL-A';
+const DETAIL_B = 'PELUCH-DETAIL-B';
+
+function orderDetail(orderNumber: string, customerName: string, address: string) {
+  return {
+    ...ordersList[0], order_number: orderNumber, customer_name: customerName, address,
+    customer_phone: '3001234567', postal_code: '', tracking_number: '', shipping_carrier: '',
+    notes: '', updated_at: '2026-04-25T10:00:00Z', shipping_amount: 0, discount_amount: 0,
+    payment_mode: 'deposit', amount_paid_now: 100000, status_history: [], payment: null,
+  };
+}
+
+async function setupDetailMocks(page: Page, testInfo: TestInfo) {
+  await setupAdminMocks(page, testInfo);
+  await page.unroute(/\/api\/orders\/list\/?(\?.*)?$/);
+  await page.route(/\/api\/orders\/list\/?(\?.*)?$/, (route) => route.fulfill({ json: ordersEnvelope([
+    { ...ordersList[0], order_number: DETAIL_A, customer_name: 'Cliente A' },
+    { ...ordersList[0], order_number: DETAIL_B, customer_name: 'Cliente B' },
+  ]) }));
+}
+
+async function holdDetailResponse(page: Page, orderNumber: string, detail: ReturnType<typeof orderDetail>) {
+  const path = `/api/orders/${orderNumber}/`;
+  let markStarted!: () => void;
+  let release!: (status: number) => void;
+  let markCompleted!: () => void;
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const responseStatus = new Promise<number>((resolve) => { release = resolve; });
+  const completed = new Promise<void>((resolve) => { markCompleted = resolve; });
+  await page.route(`**${path}`, async (route) => {
+    markStarted();
+    const status = await responseStatus;
+    await route.fulfill({ status, json: status === 200 ? detail : { detail: 'detail unavailable' } });
+    markCompleted();
+  });
+  return {
+    started,
+    finish: async (status = 200) => {
+      const finished = page.waitForEvent('requestfinished', {
+        predicate: (request) => new URL(request.url()).pathname === path,
+      });
+      release(status);
+      await Promise.all([completed, finished]);
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+    },
+  };
+}
+
+// Fails if a closed order's late response installs its customer under the current order heading.
+test('keeps the current order detail after the closed order responds',
+  { tag: [...BACKOFFICE_ORDER_DETAIL, '@outcome:success'] }, async ({ page }, testInfo) => {
+    await setupDetailMocks(page, testInfo);
+    const oldResponse = await holdDetailResponse(page, DETAIL_A, orderDetail(DETAIL_A, 'Cliente A antiguo', 'Dirección A antigua'));
+    await page.route(`**/api/orders/${DETAIL_B}/`, (route) =>
+      route.fulfill({ json: orderDetail(DETAIL_B, 'Cliente B vigente', 'Dirección B vigente') }));
+    await openOrdersFromDashboard(page);
+    await page.getByTestId(`order-row-${DETAIL_A}`).click();
+    await oldResponse.started;
+    await page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_A}` }).getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await page.getByTestId(`order-row-${DETAIL_B}`).click();
+    const dialog = page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_B}` });
+    await expect(dialog.getByText('Dirección B vigente', { exact: true })).toBeVisible();
+
+    await oldResponse.finish();
+
+    await expect(dialog.getByText('Cliente B vigente', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Dirección B vigente', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Cliente A antiguo', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Dirección A antigua', { exact: true })).toHaveCount(0);
+  });
+
+// Fails if an obsolete rejection ends the current order's loading state or installs its error.
+test('keeps the current detail loading after the closed order fails',
+  { tag: [...BACKOFFICE_ORDER_DETAIL, '@outcome:success'] }, async ({ page }, testInfo) => {
+    await setupDetailMocks(page, testInfo);
+    const oldResponse = await holdDetailResponse(page, DETAIL_A, orderDetail(DETAIL_A, 'Cliente A antiguo', 'Dirección A antigua'));
+    const currentResponse = await holdDetailResponse(page, DETAIL_B, orderDetail(DETAIL_B, 'Cliente B vigente', 'Dirección B vigente'));
+    await openOrdersFromDashboard(page);
+    await page.getByTestId(`order-row-${DETAIL_A}`).click();
+    await oldResponse.started;
+    await page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_A}` }).getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await page.getByTestId(`order-row-${DETAIL_B}`).click();
+    await currentResponse.started;
+    const dialog = page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_B}` });
+
+    await oldResponse.finish(500);
+
+    await expect(dialog.getByText('Cargando detalle…', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('No se pudo cargar el detalle del pedido.', { exact: true })).toHaveCount(0);
+    await currentResponse.finish();
+    await expect(dialog.getByText('Cliente B vigente', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Dirección B vigente', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Cargando detalle…', { exact: true })).toHaveCount(0);
+  });
+
+// Fails if the current request's error is suppressed by the stale-response guard.
+test('shows the current order detail failure in its closable dialog',
+  { tag: [...BACKOFFICE_ORDER_DETAIL, '@outcome:failure'] }, async ({ page }, testInfo) => {
+    await setupDetailMocks(page, testInfo);
+    await page.route(`**/api/orders/${DETAIL_A}/`, (route) =>
+      route.fulfill({ json: orderDetail(DETAIL_A, 'Cliente A anterior', 'Dirección A anterior') }));
+    await page.route(`**/api/orders/${DETAIL_B}/`, (route) =>
+      route.fulfill({ status: 500, json: { detail: 'detail unavailable' } }));
+    await openOrdersFromDashboard(page);
+    await page.getByTestId(`order-row-${DETAIL_A}`).click();
+    const firstDialog = page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_A}` });
+    await expect(firstDialog.getByText('Dirección A anterior', { exact: true })).toBeVisible();
+    await firstDialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await page.getByTestId(`order-row-${DETAIL_B}`).click();
+    const dialog = page.getByRole('dialog', { name: `Detalle del pedido ${DETAIL_B}` });
+
+    await expect(dialog.getByText('No se pudo cargar el detalle del pedido.', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Cargando detalle…', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Cliente A anterior', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Dirección A anterior', { exact: true })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  });
 
 // Fails if a staff status change no longer reaches the server or updates its row.
 test(

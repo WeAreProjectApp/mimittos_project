@@ -1,6 +1,6 @@
 {
-  "version": "1.5.12",
-  "lastUpdated": "2026-10-10",
+  "version": "1.5.13",
+  "lastUpdated": "2026-10-11",
   "flows": {
     "home-loads": {
       "name": "Home page loads",
@@ -235,7 +235,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "User adds a product from detail page to cart; cart is not empty on checkout",
+      "description": "User adds a configured product from its detail page. Different personalization or quoted prices on the same product, size and color remain separate cart lines; identical configuration and quotation may accumulate quantity. Each line keeps its configuration through checkout, whose order payload excludes the local cart line identity.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -261,7 +261,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User changes a cart item's quantity with the increment/decrement buttons; the minimum is one and the subtotal reflects the exact quantity. Removal uses its separate control.",
+      "description": "User changes one cart line quantity with the increment/decrement buttons; the minimum is one and the subtotal reflects the exact quantities. A sibling with the same product, size and color keeps its quantity and personalization. Removal uses its separate control.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -274,7 +274,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "User removes a product from cart and sees empty cart message",
+      "description": "User removes the selected cart line with Eliminar. Other lines remain unchanged, including differently personalized siblings with the same product, size and color; removing the last line shows the empty cart message.",
       "expectedSpecs": 1,
       "outcomes": [
         "success"
@@ -300,7 +300,7 @@
         "shared"
       ],
       "priority": "P2",
-      "description": "Cart items survive a full page reload",
+      "description": "Cart lines retain their personalization, quantities and stable local identities across repeated page reloads. Successful hydration normalizes legacy version-0 storage without merging or dropping valid lines; storage remains under cart at version 0.",
       "expectedSpecs": 1,
       "outcomes": [
         "display"
@@ -760,6 +760,20 @@
       "expectedSpecs": 1,
       "outcomes": [
         "display",
+        "failure"
+      ]
+    },
+    "backoffice-order-detail": {
+      "name": "Open the current backoffice order detail",
+      "module": "backoffice",
+      "roles": [
+        "staff"
+      ],
+      "priority": "P2",
+      "description": "Staff opens an order row on /backoffice/pedidos in a dialog named Detalle del pedido <number>. After closing A and opening B, late success or failure from A cannot replace B data, show an obsolete error or finish B loading. A successful current request displays its customer and address; a failed current request shows No se pudo cargar el detalle del pedido. in the closable B dialog without previous order data.",
+      "expectedSpecs": 3,
+      "outcomes": [
+        "success",
         "failure"
       ]
     },
@@ -1282,10 +1296,11 @@
         "staff"
       ],
       "priority": "P3",
-      "description": "Staff toggles active, edits message and colors on /backoffice/configuracion, and clicks 'Guardar cinta'; PUT /api/content/promo_banner/ persists the JSON and button shows ✓ Guardado",
+      "description": "Staff on /backoffice/configuracion first loads the existing promo banner with GET /api/content/promo_banner/. Its controls and Guardar cinta remain disabled while loading or after a failed read. Failure shows No se pudo cargar la cinta de promoción. Intenta de nuevo. and offers Reintentar carga; a successful manual retry installs the server values and enables editing. Staff edits and saves via PUT, which shows ✓ Guardado after success. Empty content_json is a valid read using the existing defaults; hero loading is independent.",
       "expectedSpecs": 1,
       "outcomes": [
-        "success"
+        "success",
+        "failure"
       ]
     },
     "backoffice-hero-image-upload": {
@@ -1410,7 +1425,7 @@
         "shared"
       ],
       "priority": "P1",
-      "description": "When order creation rejects a huella or audio reference without uploader identity or signed upload capability, checkout identifies the affected line, keeps the cart intact, and links to personalization recovery. Reupload changes the file while preserving product, size, color and quantity.",
+      "description": "When order creation rejects a huella or audio reference, checkout identifies the affected line, preserves the cart and links to personalization recovery by its stable local identity. Reupload changes only that line personalization while preserving product, size, color and quantity, including siblings sharing the same variant. Upload failure remains visible and preserves both lines; the local identity is excluded from the order payload.",
       "expectedSpecs": 1,
       "outcomes": [
         "display",
