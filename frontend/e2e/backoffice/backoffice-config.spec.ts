@@ -81,14 +81,15 @@ test('saves the banner only after loading its existing configuration',
     await page.goto('/backoffice/configuracion')
     await read.started
     const banner = page.getByRole('region', { name: 'Cinta de promoción', exact: true })
+    const message = banner.getByPlaceholder('ej: ¡Envío gratis en compras mayores a $200.000! 🎁', { exact: true })
 
     await expect(banner.getByRole('status')).toHaveText('Cargando cinta…')
-    await expect(banner.getByRole('textbox')).toBeDisabled()
+    await expect(message).toBeDisabled()
     await expect(banner.getByRole('button', { name: 'Guardar cinta', exact: true })).toBeDisabled()
     expect(writes).toEqual([])
     read.resolve()
-    await expect(banner.getByRole('textbox')).toHaveValue(mockPromoBanner.message)
-    await banner.getByRole('textbox').fill('¡Nuevo mensaje!')
+    await expect(message).toHaveValue(mockPromoBanner.message)
+    await message.fill('¡Nuevo mensaje!')
     await banner.getByRole('button', { name: 'Guardar cinta', exact: true }).click()
 
     await expect(banner.getByRole('button', { name: '✓ Guardado', exact: true })).toBeVisible()
@@ -105,20 +106,21 @@ test('retries the failed banner read before enabling configuration changes',
     await firstRead.started
     firstRead.resolve(500)
     const banner = page.getByRole('region', { name: 'Cinta de promoción', exact: true })
+    const message = banner.getByPlaceholder('ej: ¡Envío gratis en compras mayores a $200.000! 🎁', { exact: true })
 
     await expect(banner.getByRole('alert')).toHaveText('No se pudo cargar la cinta de promoción. Intenta de nuevo.')
-    await expect(banner.getByRole('textbox')).toBeDisabled()
+    await expect(message).toBeDisabled()
     await expect(banner.getByRole('button', { name: 'Guardar cinta', exact: true })).toBeDisabled()
     boundary.nextRead()
     await banner.getByRole('button', { name: 'Reintentar carga', exact: true }).click()
     await retryRead.started
     await expect(banner.getByRole('status')).toHaveText('Cargando cinta…')
-    await expect(banner.getByRole('textbox')).toBeDisabled()
+    await expect(message).toBeDisabled()
     await expect(banner.getByRole('button', { name: 'Guardar cinta', exact: true })).toBeDisabled()
     expect(boundary.writes).toEqual([])
     retryRead.resolve(200, { ...mockPromoBanner, is_active: false, message: 'Cinta recuperada' })
 
-    await expect(banner.getByRole('textbox')).toHaveValue('Cinta recuperada')
+    await expect(message).toHaveValue('Cinta recuperada')
     await expect(banner.getByRole('button', { name: 'Guardar cinta', exact: true })).toBeEnabled()
   })
 
