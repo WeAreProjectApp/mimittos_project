@@ -13,7 +13,10 @@ El registro se limita a la identidad de líneas de carrito, la vigencia del
 detalle administrativo y la lectura previa de la cinta. La autoría parte de
 `14a310a58d883ba191607faf2d5c38ffd8392c3d`; las ejecuciones de aceptación se
 deben realizar sobre el commit limpio del tren combinado. Los casos descritos
-están pendientes de esa ejecución: las etiquetas no acreditan cobertura.
+fijan criterios de aceptación: las etiquetas no acreditan cobertura. El estado,
+SHA probado, PR y artefactos se consultan en el registro local de la ronda
+`/tmp/mimittos-improvement-10102026-r5/`, indicado en
+[tasks/active_context.md](../tasks/active_context.md).
 Se mantienen las brechas históricas, categorías y el fallo o bloqueo del PUT
 de cinta fuera del alcance aprobado.
 
@@ -61,7 +64,7 @@ tiene validación local separada; su carga es un estado transitorio de abrirlo,
 no un nuevo outcome `display`. El fallo antiguo que se ignora no acredita
 `failure`: esa clase se exige a la solicitud vigente y al GET de cinta.
 
-### E2E Coverage Index — alcance r5, pendiente de validación combinada
+### E2E Coverage Index — criterios y alcance de validación combinada r5
 
 | ID | Spec dueño | Casos dirigidos |
 |---|---|---|
