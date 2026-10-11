@@ -19,6 +19,8 @@ export default function ConfiguracionPage() {
   const [bannerText, setBannerText] = useState('#fff')
   const [bannerSaving, setBannerSaving] = useState(false)
   const [bannerOk, setBannerOk] = useState(false)
+  const [bannerLoadState, setBannerLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [bannerLoadAttempt, setBannerLoadAttempt] = useState(0)
 
   // Hero image
   const [heroPreview, setHeroPreview] = useState<string | null>(null)
@@ -29,21 +31,33 @@ export default function ConfiguracionPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    let active = true
     contentService.get('promo_banner').then((d) => {
+      if (!active) return
       const c = d.content_json as Record<string, unknown>
       setBannerActive(Boolean(c.is_active))
       setBannerMsg(String(c.message ?? ''))
       setBannerBg(String(c.bg_color ?? '#D4848A'))
       setBannerText(String(c.text_color ?? '#fff'))
-    }).catch(() => null)
+      setBannerLoadState('ready')
+    }).catch(() => { if (active) setBannerLoadState('error') })
+    return () => { active = false }
+  }, [bannerLoadAttempt])
 
+  useEffect(() => {
     contentService.get('hero_image').then((d) => {
       const url = d.content_json?.image_url as string | undefined
       if (url) setHeroPreview(url)
     }).catch(() => null)
   }, [])
 
+  function retryBannerLoad() {
+    setBannerLoadState('loading')
+    setBannerLoadAttempt((attempt) => attempt + 1)
+  }
+
   async function saveBanner() {
+    if (bannerLoadState !== 'ready') return
     setBannerSaving(true)
     setBannerOk(false)
     await contentService.update('promo_banner', {
@@ -94,11 +108,19 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* ── Cinta de promoción ── */}
-      <section style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: 28, boxShadow: 'var(--shadow-sm)', marginBottom: 24 }}>
+      <section aria-label="Cinta de promoción" style={{ background: '#fff', borderRadius: 'var(--radius-lg)', padding: 28, boxShadow: 'var(--shadow-sm)', marginBottom: 24 }}>
         <h2 style={{ fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 17, color: 'var(--navy)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
           📢 Cinta de promoción
         </h2>
 
+        {bannerLoadState === 'loading' && <p role="status">Cargando cinta…</p>}
+        {bannerLoadState === 'error' && (
+          <div>
+            <p role="alert">No se pudo cargar la cinta de promoción. Intenta de nuevo.</p>
+            <button type="button" onClick={retryBannerLoad}>Reintentar carga</button>
+          </div>
+        )}
+        <fieldset disabled={bannerLoadState !== 'ready'} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
         {/* Preview */}
         <div style={{
           height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -111,11 +133,12 @@ export default function ConfiguracionPage() {
         </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, cursor: 'pointer' }}>
-          <div
+          <button
+            type="button"
             data-testid="banner-toggle"
             onClick={() => setBannerActive(!bannerActive)}
             style={{
-              width: 44, height: 24, borderRadius: 999,
+              width: 44, height: 24, borderRadius: 999, border: 'none', padding: 0,
               background: bannerActive ? 'var(--coral)' : 'rgba(27,42,74,.12)',
               position: 'relative', transition: 'background .2s', flexShrink: 0,
             }}
@@ -125,7 +148,7 @@ export default function ConfiguracionPage() {
               width: 18, height: 18, borderRadius: '50%', background: '#fff',
               boxShadow: '0 1px 4px rgba(0,0,0,.2)', transition: 'left .2s',
             }} />
-          </div>
+          </button>
           <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--navy)' }}>
             {bannerActive ? 'Cinta activa — visible en el sitio' : 'Cinta desactivada'}
           </span>
@@ -183,9 +206,10 @@ export default function ConfiguracionPage() {
           </div>
         </div>
 
-        <button onClick={saveBanner} disabled={bannerSaving} style={btnPrimary}>
+        <button onClick={saveBanner} disabled={bannerLoadState !== 'ready' || bannerSaving} style={btnPrimary}>
           {bannerSaving ? 'Guardando…' : bannerOk ? '✓ Guardado' : 'Guardar cinta'}
         </button>
+        </fieldset>
       </section>
 
       {/* ── Imagen del hero ── */}
