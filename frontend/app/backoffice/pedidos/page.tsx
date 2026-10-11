@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { orderService } from '@/lib/services/orderService'
 import { itemSizeLabel, itemSizeCm, itemColorName, itemColorHex } from '@/lib/utils/orderItemDisplay'
@@ -64,6 +64,7 @@ export default function PedidosAdminPage() {
   const [detail, setDetail] = useState<OrderDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const detailGeneration = useRef(0)
 
   const { status: filter, page } = query
   const response = resolvedQuery === query ? listResponse : null
@@ -110,13 +111,19 @@ export default function PedidosAdminPage() {
 
   useEffect(() => {
     if (!detailOrderNumber) return
+    const generation = ++detailGeneration.current
     setDetail(null)
     setDetailError('')
     setDetailLoading(true)
     orderService.getOrderDetail(detailOrderNumber)
-      .then(setDetail)
-      .catch(() => setDetailError('No se pudo cargar el detalle del pedido.'))
-      .finally(() => setDetailLoading(false))
+      .then((data) => { if (detailGeneration.current === generation) setDetail(data) })
+      .catch(() => {
+        if (detailGeneration.current === generation) setDetailError('No se pudo cargar el detalle del pedido.')
+      })
+      .finally(() => { if (detailGeneration.current === generation) setDetailLoading(false) })
+    return () => {
+      if (detailGeneration.current === generation) detailGeneration.current++
+    }
   }, [detailOrderNumber])
 
   function handleFilterChange(status: OrderStatus | '') {
@@ -151,7 +158,16 @@ export default function PedidosAdminPage() {
     }
   }
 
+  function openDetail(orderNumber: string) {
+    detailGeneration.current++
+    setDetail(null)
+    setDetailError('')
+    setDetailLoading(true)
+    setDetailOrderNumber(orderNumber)
+  }
+
   function closeDetail() {
+    detailGeneration.current++
     setDetailOrderNumber(null)
     setDetail(null)
     setDetailError('')
@@ -215,7 +231,7 @@ export default function PedidosAdminPage() {
                 <tr
                   key={o.order_number}
                   data-testid={`order-row-${o.order_number}`}
-                  onClick={() => setDetailOrderNumber(o.order_number)}
+                  onClick={() => openDetail(o.order_number)}
                   style={{ borderBottom: '1px dashed rgba(212,132,138,.12)', cursor: 'pointer' }}
                 >
                   <td style={tdStyle}><span style={{ fontWeight: 700, color: 'var(--navy)', textDecoration: 'underline', textDecorationColor: 'rgba(212,132,138,.4)' }}>{o.order_number}</span></td>
@@ -302,7 +318,7 @@ function OrderDetailModal({
           <button onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--gray-warm)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
-        {loading && <p style={{ color: 'var(--gray-warm)' }}>Cargando detalle...</p>}
+        {loading && <p style={{ color: 'var(--gray-warm)' }}>Cargando detalle…</p>}
         {error && <p style={{ color: '#c23b3b' }}>{error}</p>}
 
         {detail && (
