@@ -12,7 +12,7 @@ python-decouple==3.8
 easy-thumbnails==2.10.1
 Faker==40.37.0
 huey>=3.3.4,<4.0
-pillow==12.3.0
+pillow==13.0.0
 pytest==9.1.1
 pytest-cov==7.1.0
 pytest-django==4.14.0
