@@ -79,7 +79,7 @@ def test_upload_media_returns_400_when_no_file_sent(api_client):
 
 @pytest.mark.django_db
 def test_upload_media_rejects_missing_file_with_separator_heavy_header(api_client, tmp_path):
-    """An adversarial quoted parameter must still reach a harmless missing-file rejection."""
+    """An oversized media type is refused before parsing and leaves stored media untouched."""
     content_type = 'multipart/form-data; boundary=r2; padding="' + ';' * 8000 + '"'
     body = encode_multipart('r2', {'media_type': 'huella_image'})
 
@@ -96,8 +96,9 @@ def test_upload_media_rejects_missing_file_with_separator_heavy_header(api_clien
             'POST', '/api/media/upload/', data=body, content_type=content_type,
         )
 
-        assert response.status_code == 400
-        assert response.data == {'detail': 'No se envió ningún archivo.'}
+        # DRF >= 3.18.2 refuses request media types over 256 characters before any parser runs.
+        assert response.status_code == 415
+        assert response.data['detail'].code == 'unsupported_media_type'
         assert PersonalizationMedia.objects.count() == 1
         existing.refresh_from_db()
         assert existing.file.name == original_name
