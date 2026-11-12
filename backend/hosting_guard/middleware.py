@@ -1,6 +1,7 @@
 """Opt-in document adapter. APIs and operational recovery remain reachable."""
 import json
 import logging
+import posixpath
 import re
 from html import escape
 from pathlib import Path
@@ -40,7 +41,7 @@ class HostingControlMiddleware:
         return value
 
     def __call__(self, request):
-        path = request.path
+        path = posixpath.normpath(request.path)
         state = self.state(request)
         exemptions = list(getattr(settings, 'HOSTING_CONTROL_EXEMPT_PATHS', ('/api/', '/admin/', '/health/')))
         clean = re.sub(r'^/[a-z]{2}(?:-[a-z]{2})?(?=/)', '', path)
@@ -51,7 +52,9 @@ class HostingControlMiddleware:
         if path in ('/__hosting/notice.js', '/__hosting/notice.css'):
             name = path.rsplit('/', 1)[-1]
             return HttpResponse((ASSETS / name).read_bytes(), content_type='text/javascript' if name.endswith('.js') else 'text/css', headers={'Cache-Control': 'no-store'})
-        if path.startswith('/__hosting/') or exempt:
+        if path.startswith('/__hosting/'):
+            return HttpResponse(status=404, headers={'Cache-Control': 'no-store'})
+        if exempt:
             return self.get_response(request)
         is_document = request.method in ('GET', 'HEAD') and ('text/html' in request.headers.get('Accept', '') or request.headers.get('Sec-Fetch-Dest') == 'document')
         if state and state['mode'] == 'suspended' and is_document:

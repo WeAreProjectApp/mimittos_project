@@ -73,8 +73,7 @@ THUMBNAIL_ALIASES = {
 
 THUMBNAIL_DEFAULT_STORAGE = 'default'
 
-MIDDLEWARE = [
-    'hosting_guard.middleware.HostingControlMiddleware',]
+MIDDLEWARE = []
 if ENABLE_SILK:
     MIDDLEWARE.append('silk.middleware.SilkyMiddleware')
 MIDDLEWARE += [

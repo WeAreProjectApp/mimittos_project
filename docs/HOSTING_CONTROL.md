@@ -13,3 +13,5 @@ la navegación. El estado público y los recursos se sirven en `/__hosting/`
 desde Next, usando el mismo archivo local. Configurar también las tres opciones
 en el entorno del servicio Node (`/etc/projectapp-hosting/mimittos_project.env`
 en el toolkit). Su prueba de consumo de estado corre en el workflow focal.
+
+El banner limita su altura y mantiene el texto completo desplazable. Las cabeceras y menús fijos usan `data-hosting-offset` o `--hosting-banner-height` (cero sin aviso) para preservar sus controles.

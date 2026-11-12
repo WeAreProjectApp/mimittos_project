@@ -68,3 +68,9 @@ def test_foreign_environment_is_ignored(local_state):
     result = render(local_state(environment='staging'), local_state)
     assert result.status_code == 200
     assert b'/__hosting/notice.js' not in result.content
+
+
+def test_unknown_adapter_path_never_serves_product(local_state):
+    result = render(local_state(), local_state, url='/__hosting/unknown')
+    assert result.status_code == 404
+    assert result.content == b''

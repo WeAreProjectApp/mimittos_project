@@ -4,6 +4,7 @@
   window.__hostingControl = true
   let current = null
   let busy = false
+  let bannerObserver = null
   const initial = document.getElementById('hosting-initial')
   if (initial) { try { current = JSON.parse(initial.textContent) } catch { /* retry through local adapter */ } }
   function exempt() {
@@ -15,6 +16,9 @@
     const mode = exempt() ? 'normal' : current.mode
     if (document.body.dataset.hostingStandalone && mode !== 'suspended') { location.reload(); return }
     document.documentElement.toggleAttribute('data-hosting-suspended', mode === 'suspended')
+    document.documentElement.toggleAttribute('data-hosting-banner', mode === 'banner')
+    bannerObserver?.disconnect()
+    document.documentElement.style.removeProperty('--hosting-banner-height')
     let notice = document.getElementById('hosting-notice')
     if (mode === 'normal') { notice?.remove(); return }
     if (!notice) { notice = document.createElement('section'); notice.id = 'hosting-notice'; document.body.prepend(notice) }
@@ -25,6 +29,12 @@
     const text = document.createElement('p')
     text.textContent = current.message.text
     notice.replaceChildren(title, text)
+    if (mode === 'banner') {
+      const measure = () => document.documentElement.style.setProperty('--hosting-banner-height', `${notice.getBoundingClientRect().height}px`)
+      measure()
+      bannerObserver = new ResizeObserver(measure)
+      bannerObserver.observe(notice)
+    }
     window.dispatchEvent(new CustomEvent('hosting-control-applied', { detail: { mode, version: current.version } }))
   }
   async function refresh() {

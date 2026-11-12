@@ -116,7 +116,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" suppressHydrationWarning>
       <head>
         <link rel="stylesheet" href="/__hosting/notice.css" />
-        <Script src="/__hosting/notice.js" strategy="beforeInteractive" />
+        <script src="/__hosting/notice.js" defer />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

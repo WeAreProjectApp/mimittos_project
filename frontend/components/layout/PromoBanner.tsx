@@ -42,7 +42,7 @@ export default function PromoBanner({ onLoad }: Props) {
     <div
       aria-live="polite"
       style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 51,
+        position: 'fixed', top: 'var(--hosting-banner-height, 0px)', left: 0, right: 0, zIndex: 51,
         height: BANNER_HEIGHT,
         background: data.bg_color || 'var(--coral)',
         color: data.text_color || '#fff',
