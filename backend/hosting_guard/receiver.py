@@ -114,27 +114,30 @@ def atomic_state(path, value):
             os.unlink(temporary)
 
 
+def fetch_enrolled(url, origins, accept='application/json'):
+    for _ in range(5):
+        code, headers, raw = request(url, accept=accept)
+        if code not in (301, 302, 303, 307, 308):
+            return code, headers, raw
+        url = urljoin(url, headers.get('Location', ''))
+        parsed = urlsplit(url)
+        if f'{parsed.scheme}://{parsed.netloc}' not in origins:
+            raise ValueError('Redirect outside enrolled production')
+    raise ValueError('Too many production redirects')
+
+
 def probe(origin, expected):
-    code, _, raw = request(origin + '/__hosting/state')
+    code, _, raw = fetch_enrolled(origin + '/__hosting/state', expected['origins'])
     if code != 200:
         return False
     observed = json.loads(raw)
     if not observed.get('ready') or observed.get('adapter_version') != 1 or any(observed.get(key) != expected[key] for key in ('target_key', 'version', 'digest', 'mode', 'message')):
         return False
-    url = origin + '/'
-    for _ in range(5):
-        code, headers, raw = request(url, accept='text/html')
-        if code in (301, 302, 303, 307, 308):
-            url = urljoin(url, headers.get('Location', ''))
-            parsed = urlsplit(url)
-            if f'{parsed.scheme}://{parsed.netloc}' != origin:
-                return False
-            continue
-        return (code == (503 if expected['mode'] == 'suspended' else 200)
-                and headers.get('X-Hosting-Version') == str(expected['version'])
-                and headers.get('X-Hosting-Digest') == expected['digest']
-                and b'/__hosting/notice.js' in raw and b'/__hosting/notice.css' in raw)
-    return False
+    code, headers, raw = fetch_enrolled(origin + '/', expected['origins'], accept='text/html')
+    return (code == (503 if expected['mode'] == 'suspended' else 200)
+            and headers.get('X-Hosting-Version') == str(expected['version'])
+            and headers.get('X-Hosting-Digest') == expected['digest']
+            and b'/__hosting/notice.js' in raw and b'/__hosting/notice.css' in raw)
 
 
 def apply_target(enrollment, row, value):

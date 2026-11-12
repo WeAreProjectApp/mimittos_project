@@ -30,8 +30,10 @@
   async function refresh() {
     if (busy) return
     busy = true
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
     try {
-      const result = await fetch('/__hosting/state', { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(5000) })
+      const result = await fetch('/__hosting/state', { cache: 'no-store', credentials: 'omit', signal: controller.signal })
       if (!result.ok) return
       const next = await result.json()
       if (!next.ready || !['normal', 'banner', 'suspended'].includes(next.mode) || !next.message) return
@@ -39,7 +41,7 @@
       current = next
       render()
     } catch { /* A disconnected production keeps its last valid presentation. */ }
-    finally { busy = false }
+    finally { clearTimeout(timeout); busy = false }
   }
   for (const method of ['pushState', 'replaceState']) {
     const original = history[method]
