@@ -134,10 +134,17 @@ def probe(origin, expected):
     if not observed.get('ready') or observed.get('adapter_version') != 1 or any(observed.get(key) != expected[key] for key in ('target_key', 'version', 'digest', 'mode', 'message')):
         return False
     code, headers, raw = fetch_enrolled(origin + '/', expected['origins'], accept='text/html')
-    return (code == (503 if expected['mode'] == 'suspended' else 200)
+    document_ready = (code == (503 if expected['mode'] == 'suspended' else 200)
             and headers.get('X-Hosting-Version') == str(expected['version'])
             and headers.get('X-Hosting-Digest') == expected['digest']
             and b'/__hosting/notice.js' in raw and b'/__hosting/notice.css' in raw)
+    if not document_ready:
+        return False
+    for name, marker in [('notice.js', b'window.__hostingControl'), ('notice.css', b'data-hosting-suspended')]:
+        code, _, raw = fetch_enrolled(origin + '/__hosting/' + name, expected['origins'], accept='*/*')
+        if code != 200 or marker not in raw:
+            return False
+    return True
 
 
 def apply_target(enrollment, row, value):
