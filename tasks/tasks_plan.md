@@ -1,3 +1,5 @@
+> **PA-264:** adaptador de hosting preparado y apagado por defecto. QA manual y servicios permanecen pausados; no acredita consumo en producción. Véase `docs/HOSTING_CONTROL.md`.
+
 ---
 trigger: manual
 description: Task backlog, feature completion status, known issues, and test coverage tracking for Mimittos.

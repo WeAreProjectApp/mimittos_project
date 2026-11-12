@@ -78,6 +78,7 @@ if ENABLE_SILK:
     MIDDLEWARE.append('silk.middleware.SilkyMiddleware')
 MIDDLEWARE += [
     'django.middleware.security.SecurityMiddleware',
+    'hosting_guard.middleware.HostingControlMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -410,3 +411,9 @@ ADMIN_EMAIL = config('ADMIN_EMAIL', default='')
 MAX_UPLOAD_IMAGE_MB = config('MAX_UPLOAD_IMAGE_MB', default=15, cast=int)
 MAX_UPLOAD_AUDIO_MB = config('MAX_UPLOAD_AUDIO_MB', default=10, cast=int)
 DATA_UPLOAD_MAX_MEMORY_SIZE = max(MAX_UPLOAD_IMAGE_MB, MAX_UPLOAD_AUDIO_MB) * 1024 * 1024
+
+# PA-264: only opt in on the enrolled production, never staging or DEV.
+HOSTING_CONTROL_ENABLED = config('HOSTING_CONTROL_ENABLED', default=False, cast=bool)
+HOSTING_CONTROL_TARGET = config('HOSTING_CONTROL_TARGET', default='')
+HOSTING_CONTROL_STATE_FILE = config('HOSTING_CONTROL_STATE_FILE', default='')
+HOSTING_CONTROL_EXEMPT_PATHS = ('/api/', '/admin/', '/admin-gallery/', '/health/')

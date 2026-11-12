@@ -58,7 +58,7 @@ export default function Header({ bannerHeight = 0 }: { bannerHeight?: number }) 
       <header
         ref={headerRef}
         style={{
-          position: 'fixed', top: bannerHeight, left: 0, right: 0, zIndex: 50,
+          position: 'fixed', top: `calc(var(--hosting-banner-height, 0px) + ${bannerHeight}px)`, left: 0, right: 0, zIndex: 50,
           background: 'rgba(255,249,246,.9)',
           backdropFilter: 'blur(14px)',
           WebkitBackdropFilter: 'blur(14px)',
@@ -221,6 +221,7 @@ function MobileMenuOverlay({
         display: 'none',
         position: 'fixed',
         inset: 0,
+        top: 'var(--hosting-banner-height, 0px)',
         zIndex: 49,
         flexDirection: 'column',
         background: 'rgba(255,249,246,.97)',

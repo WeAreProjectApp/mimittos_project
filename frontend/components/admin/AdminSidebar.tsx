@@ -34,8 +34,8 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
       )}
 
       <aside style={{
-        position: 'fixed', top: 0, left: 0,
-        width: 220, height: '100vh', background: 'var(--navy)',
+        position: 'fixed', top: 'var(--hosting-banner-height, 0px)', left: 0,
+        width: 220, height: 'calc(100dvh - var(--hosting-banner-height, 0px))', background: 'var(--navy)',
         display: 'flex', flexDirection: 'column', padding: '28px 0',
         zIndex: 50,
         transition: 'transform .25s ease',
