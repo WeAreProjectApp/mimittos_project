@@ -47,6 +47,10 @@
   }
   addEventListener('popstate', () => { render(); refresh() })
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() })
+  // Hydration can replace body siblings; immediately restore the active notice.
+  new MutationObserver(() => {
+    if (current && current.mode !== 'normal' && !exempt() && !document.getElementById('hosting-notice')) render()
+  }).observe(document.body, { childList: true })
   render()
   refresh()
   setInterval(refresh, 10000)
