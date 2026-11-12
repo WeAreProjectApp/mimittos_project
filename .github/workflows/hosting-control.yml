@@ -10,6 +10,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       - name: Verify production state consumption
         working-directory: frontend
-        run: node --experimental-strip-types --test scripts/hosting/state.test.mjs
+        run: node --experimental-strip-types --test scripts/hosting/state.test.mjs scripts/hosting/http.test.mjs

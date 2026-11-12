@@ -27,7 +27,7 @@ export function stateFor(request: Request): State | null {
       || createHash('sha256').update(canonical(payload)).digest('hex') !== digest) throw new Error('Invalid state');
     lastValid = value;
   } catch { /* Preserve the previously validated presentation on transient file failure. */ }
-  if (lastValid?.target_key !== process.env.HOSTING_CONTROL_TARGET || !lastValid.origins.some(origin => new URL(origin).host === request.headers.get('host'))) return null;
+  if (!lastValid || lastValid.target_key !== process.env.HOSTING_CONTROL_TARGET || !lastValid.origins.some(origin => new URL(origin).host === request.headers.get('host'))) return null;
   return lastValid;
 }
 
